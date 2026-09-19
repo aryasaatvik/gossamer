@@ -1,6 +1,6 @@
 {
   "name": "pagegraph",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "description": "Route-declared SEO graph and audit toolkit for TanStack Start: sitemap/robots, React head, JSON-LD, Vite coverage gate, live audit, and Jev-backed link decisions.",
   "keywords": [
     "seo",
