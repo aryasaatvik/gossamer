@@ -46,7 +46,7 @@ const TOKEN =
 // links, and stops a decoy from winning over a genuine `href`.
 const HREF = /(?:^|\s)href\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i;
 
-const BASE_TAG = /<base\b[^>]*>/i;
+const BASE_TAG = /<base\b[^>]*>/gi;
 
 const NON_NAVIGABLE = /^(?:#|mailto:|tel:|javascript:|data:)/i;
 
@@ -77,20 +77,25 @@ const hrefValue = (attributes: string): string | undefined => {
 };
 
 /**
- * The document base URL: the first `<base href>` wins (later ones are ignored,
- * per HTML), resolved against the response URL. Missing or invalid base falls
- * back to the response URL.
+ * The document base URL: the first `<base>` with a resolvable `href` wins,
+ * resolved against the response URL. Per HTML a `<base>` may carry only
+ * `target`, and later `<base href>` elements are ignored, so a `<base>` without
+ * `href` (or with an invalid one) is skipped rather than ending the search.
+ * With no usable base, links resolve against the response URL.
  */
 const documentBase = (html: string, responseUrl: URL): URL => {
-  const tag = BASE_TAG.exec(html);
-  if (tag === null) return responseUrl;
-  const href = hrefValue(tag[0]);
-  if (href === undefined || href.length === 0) return responseUrl;
-  try {
-    return new URL(href, responseUrl);
-  } catch {
-    return responseUrl;
+  BASE_TAG.lastIndex = 0;
+  let tag: RegExpExecArray | null;
+  while ((tag = BASE_TAG.exec(html)) !== null) {
+    const href = hrefValue(tag[0]);
+    if (href === undefined || href.length === 0) continue;
+    try {
+      return new URL(href, responseUrl);
+    } catch {
+      continue;
+    }
   }
+  return responseUrl;
 };
 
 /**

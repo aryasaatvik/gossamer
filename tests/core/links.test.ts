@@ -73,6 +73,14 @@ describe("extractAnchors", () => {
     );
     expect(anchors.map((anchor) => anchor.href)).toEqual(["https://example.com/real"]);
   });
+
+  it("skips a <base> without href and uses the next resolvable one", () => {
+    const anchors = extractAnchors(
+      `<base target="_blank"><base href="/app/"><a href="x">X</a>`,
+      "https://example.com/page",
+    );
+    expect(anchors.map((anchor) => anchor.href)).toEqual(["https://example.com/app/x"]);
+  });
 });
 
 describe("normalizePath", () => {
