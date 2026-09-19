@@ -46,6 +46,33 @@ describe("extractAnchors", () => {
     );
     expect(anchor?.text).toBe("Send email & docs");
   });
+
+  it("ignores non-href attributes such as data-href and xhref", () => {
+    const anchors = extractAnchors(
+      `<a data-href="/decoy" href="/real">A</a><a xhref="/decoy2">B</a>`,
+      "https://example.com/",
+    );
+    expect(anchors.map((anchor) => anchor.href)).toEqual(["https://example.com/real"]);
+  });
+
+  it("resolves relative links against the first <base href>", () => {
+    const anchors = extractAnchors(
+      `<base href="/docs/"><base href="/ignored/"><a href="guide">Guide</a><a href="/root">Root</a>`,
+      "https://example.com/page",
+    );
+    expect(anchors.map((anchor) => anchor.href)).toEqual([
+      "https://example.com/docs/guide",
+      "https://example.com/root",
+    ]);
+  });
+
+  it("falls back to the response URL for an invalid <base href>", () => {
+    const anchors = extractAnchors(
+      `<base href="http://["><a href="/real">Root</a>`,
+      "https://example.com/page",
+    );
+    expect(anchors.map((anchor) => anchor.href)).toEqual(["https://example.com/real"]);
+  });
 });
 
 describe("normalizePath", () => {
@@ -94,6 +121,45 @@ describe("buildRenderedGraph", () => {
   it("marks pages with no incoming internal edge as orphans", () => {
     const graph = buildRenderedGraph("https://example.com", pages);
     // /orphan is only linked from a footer edge, which still counts as incoming.
+    expect(graph.orphans).toEqual([]);
+  });
+
+  it("drops pages and anchors outside the graph origin", () => {
+    const graph = buildRenderedGraph("https://example.com", [
+      {
+        url: "https://example.com/",
+        anchors: [
+          { href: "https://other.test/x", text: "x", region: "body", internal: true },
+          { href: "https://example.com/kept", text: "k", region: "body", internal: true },
+        ],
+      },
+      {
+        url: "https://other.test/other",
+        anchors: [{ href: "https://example.com/leak", text: "l", region: "body", internal: true }],
+      },
+    ]);
+    expect(graph.edges.map((edge) => `${edge.from}->${edge.to}`)).toEqual(["/->/kept"]);
+    expect([...graph.depthByPath.keys()].sort()).toEqual(["/", "/kept"]);
+  });
+
+  it("roots depth at the seed's normalized final path after a redirect", () => {
+    const graph = buildRenderedGraph(
+      "https://example.com",
+      [
+        {
+          url: "https://example.com/en",
+          anchors: [
+            { href: "https://example.com/en/next", text: "n", region: "body", internal: true },
+          ],
+        },
+        { url: "https://example.com/en/next", anchors: [] },
+      ],
+      "/en",
+    );
+    expect(graph.depthByPath.get("/en")).toBe(0);
+    expect(graph.depthByPath.get("/en/next")).toBe(1);
+    expect(graph.maxDepth).toBe(1);
+    // The redirected homepage is the root, not an orphan.
     expect(graph.orphans).toEqual([]);
   });
 });

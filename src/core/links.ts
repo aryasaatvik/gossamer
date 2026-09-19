@@ -41,7 +41,12 @@ const REGION_TAGS = new Set(["nav", "footer", "header"]);
 const TOKEN =
   /<(\/?)(nav|footer|header)\b[^>]*>|<a\b([^>]*)>([\s\S]*?)<\/a>/gi;
 
-const HREF = /href\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i;
+// A real `href` attribute is preceded by whitespace (or the tag's start). The
+// boundary keeps `data-href`, `xhref`, and similar attributes from reading as
+// links, and stops a decoy from winning over a genuine `href`.
+const HREF = /(?:^|\s)href\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i;
+
+const BASE_TAG = /<base\b[^>]*>/i;
 
 const NON_NAVIGABLE = /^(?:#|mailto:|tel:|javascript:|data:)/i;
 
@@ -72,12 +77,30 @@ const hrefValue = (attributes: string): string | undefined => {
 };
 
 /**
+ * The document base URL: the first `<base href>` wins (later ones are ignored,
+ * per HTML), resolved against the response URL. Missing or invalid base falls
+ * back to the response URL.
+ */
+const documentBase = (html: string, responseUrl: URL): URL => {
+  const tag = BASE_TAG.exec(html);
+  if (tag === null) return responseUrl;
+  const href = hrefValue(tag[0]);
+  if (href === undefined || href.length === 0) return responseUrl;
+  try {
+    return new URL(href, responseUrl);
+  } catch {
+    return responseUrl;
+  }
+};
+
+/**
  * Extract every anchor in document order, tagging each with the region tag it
  * sits inside. Anchor text keeps only its letters and a coarse entity decode;
  * this is a classifier input, not a renderer.
  */
 export const extractAnchors = (html: string, baseUrl: string): ReadonlyArray<Anchor> => {
   const base = new URL(baseUrl);
+  const resolutionBase = documentBase(html, base);
   const regions: Array<AnchorRegion> = [];
   const anchors: Array<Anchor> = [];
   TOKEN.lastIndex = 0;
@@ -100,7 +123,7 @@ export const extractAnchors = (html: string, baseUrl: string): ReadonlyArray<Anc
     if (raw === undefined || raw.length === 0 || NON_NAVIGABLE.test(raw)) continue;
     let resolved: URL;
     try {
-      resolved = new URL(raw, base);
+      resolved = new URL(raw, resolutionBase);
     } catch {
       continue;
     }
@@ -147,32 +170,40 @@ const breadthFirstDepth = (
 
 /**
  * Build the rendered graph from crawled pages. `origin` fixes the graph's
- * same-origin boundary; every page path is keyed the way the declared graph
- * keys its routes.
+ * same-origin boundary — pages and anchors on another origin are dropped, not
+ * silently folded in — and `root` is the normalized path the depth BFS starts
+ * from (the seed's final path when the homepage redirected). Every page path is
+ * keyed the way the declared graph keys its routes.
  */
 export const buildRenderedGraph = (
   origin: string,
   pages: ReadonlyArray<RenderedPage>,
+  root: string = "/",
 ): RenderedGraph => {
-  const root = new URL(origin);
+  const originUrl = new URL(origin);
+  const graphOrigin = originUrl.origin;
+  const rootKey = root.replace(/\/+$/, "") || "/";
   const edges: Array<LinkEdge> = [];
   const nodes = new Set<string>();
   for (const page of pages) {
-    let path: string;
+    let pageUrl: URL;
     try {
-      path = normalizePath(new URL(page.url));
+      pageUrl = new URL(page.url);
     } catch {
       continue;
     }
+    if (pageUrl.origin !== graphOrigin) continue;
+    const path = normalizePath(pageUrl);
     nodes.add(path);
     for (const anchor of page.anchors) {
-      if (!anchor.internal) continue;
-      let target: string;
+      let targetUrl: URL;
       try {
-        target = normalizePath(new URL(anchor.href));
+        targetUrl = new URL(anchor.href);
       } catch {
         continue;
       }
+      if (targetUrl.origin !== graphOrigin) continue;
+      const target = normalizePath(targetUrl);
       if (target === path) continue;
       edges.push({ from: path, to: target, region: anchor.region });
     }
@@ -180,8 +211,10 @@ export const buildRenderedGraph = (
   const internalEdges = edges;
   const contextualEdges = edges.filter((edge) => edge.region === "body");
   const incoming = new Set(internalEdges.map((edge) => edge.to));
-  const orphans = [...nodes].filter((path) => path !== "/" && !incoming.has(path)).sort();
-  const depthByPath = breadthFirstDepth(internalEdges, "/");
+  const orphans = [...nodes]
+    .filter((path) => path !== rootKey && !incoming.has(path))
+    .sort();
+  const depthByPath = breadthFirstDepth(internalEdges, rootKey);
   let maxDepth: number | null = null;
   for (const value of depthByPath.values()) {
     if (maxDepth === null || value > maxDepth) maxDepth = value;
