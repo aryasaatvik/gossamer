@@ -1,5 +1,5 @@
 /**
- * `gossamer/config` — the `gossamer` CLI's configuration surface.
+ * `pagegraph/config` — the `pagegraph` CLI's configuration surface.
  *
  * The CLI is a set of pure views over one graph, but *acquiring* that graph is
  * host knowledge: only the app knows where its graph module lives and what its
@@ -8,7 +8,7 @@
  *
  * ```ts
  * // seo.config.ts
- * import { defineSeoConfig, viteGraphLoader } from "gossamer/config";
+ * import { defineSeoConfig, viteGraphLoader } from "pagegraph/config";
  * import { routeConfig } from "./lib/route-config";
  *
  * export default defineSeoConfig({
@@ -37,7 +37,7 @@ export interface SeoCliConfig {
   readonly origin: string;
   /**
    * Path prefixes disallowed in robots.txt. Feed it the generated
-   * `routeConfig.robotsExclusions` if you run the `gossamer/vite` plugin.
+   * `routeConfig.robotsExclusions` if you run the `pagegraph/vite` plugin.
    */
   readonly disallow: ReadonlyArray<string>;
   /**

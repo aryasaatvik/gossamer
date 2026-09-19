@@ -14,7 +14,7 @@ import type { AnyRouteMatch } from "@tanstack/react-router";
  * Consumer-augmented registry.
  *
  * ```ts
- * declare module "gossamer" {
+ * declare module "pagegraph" {
  *   interface Register {
  *     paths: FileRouteTypes["fullPaths"];
  *     kinds: "page" | "article" | "hub";

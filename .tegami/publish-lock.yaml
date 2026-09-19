@@ -1,11 +1,11 @@
 core:changelogs:
-  - content: "---\npackages:\n  tanstack-plugin-seo:\n    type: minor\n---\n\n### Compare timestamped SEO audits\n\nAdd `seo diff <before.json> <after.json>` with deterministic human and JSON\noutput, schema validation, and regression-aware exit behavior. Structural\nfindings, scanner failures, and lost coverage fail the command, while editorial\nchanges and volatile scanner evidence remain non-blocking.\n"
+  - content: "---\npackages:\n  pagegraph:\n    type: minor\n---\n\n### Compare timestamped SEO audits\n\nAdd `seo diff <before.json> <after.json>` with deterministic human and JSON\noutput, schema validation, and regression-aware exit behavior. Structural\nfindings, scanner failures, and lost coverage fail the command, while editorial\nchanges and volatile scanner evidence remain non-blocking.\n"
     filename: 2026-08-30-seo-audit-diff.md
     v: 0.0.0
 core:packages:
   - changelogIds:
       - 2026-08-30-seo-audit-diff.md
-    id: npm:tanstack-plugin-seo
+    id: npm:pagegraph
     updated: true
 npm:packages:
-  - id: npm:tanstack-plugin-seo
+  - id: npm:pagegraph

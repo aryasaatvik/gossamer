@@ -1,5 +1,5 @@
 {
-  "name": "gossamer",
+  "name": "pagegraph",
   "version": "0.5.0",
   "description": "Route-declared SEO graph and audit toolkit for TanStack Start: sitemap/robots, React head, JSON-LD, Vite coverage gate, live audit, and Jev-backed link decisions.",
   "keywords": [
@@ -17,17 +17,17 @@
     "vite",
     "jev"
   ],
-  "homepage": "https://github.com/aryasaatvik/gossamer#readme",
+  "homepage": "https://github.com/aryasaatvik/pagegraph#readme",
   "bugs": {
-    "url": "https://github.com/aryasaatvik/gossamer/issues"
+    "url": "https://github.com/aryasaatvik/pagegraph/issues"
   },
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/aryasaatvik/gossamer.git"
+    "url": "git+https://github.com/aryasaatvik/pagegraph.git"
   },
   "bin": {
-    "gossamer": "./dist/cli.js"
+    "pagegraph": "./dist/cli.js"
   },
   "files": [
     "dist",

@@ -92,15 +92,15 @@ export const auditCommand = Command.make("audit", {
   ),
   Command.withExamples([
     {
-      command: "gossamer audit https://example.com",
+      command: "pagegraph audit https://example.com",
       description: "HTTP and Lighthouse audit",
     },
     {
-      command: "gossamer audit https://example.com --json",
+      command: "pagegraph audit https://example.com --json",
       description: "One JSON report on stdout",
     },
     {
-      command: "gossamer audit http://localhost:3000 --allow-private --probe-only",
+      command: "pagegraph audit http://localhost:3000 --allow-private --probe-only",
       description: "Audit a local app",
     },
   ]),

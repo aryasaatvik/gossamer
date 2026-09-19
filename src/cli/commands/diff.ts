@@ -11,10 +11,10 @@ import { renderAuditDiff } from "../../audit/render";
 import { jsonFlag, printJson, printText, SeoCliError } from "../output";
 
 const before = Argument.string("before.json").pipe(
-  Argument.withDescription("Earlier gossamer audit JSON artifact"),
+  Argument.withDescription("Earlier pagegraph audit JSON artifact"),
 );
 const after = Argument.string("after.json").pipe(
-  Argument.withDescription("Later gossamer audit JSON artifact"),
+  Argument.withDescription("Later pagegraph audit JSON artifact"),
 );
 
 const readAuditReport = Effect.fn("SeoCli.readAuditReport")(function* (
@@ -48,15 +48,15 @@ export const diffCommand = Command.make("diff", {
   json: jsonFlag,
 }).pipe(
   Command.withDescription(
-    "Compare two versioned gossamer audit JSON artifacts for semantic regressions",
+    "Compare two versioned pagegraph audit JSON artifacts for semantic regressions",
   ),
   Command.withExamples([
     {
-      command: "gossamer diff before.json after.json",
+      command: "pagegraph diff before.json after.json",
       description: "Render a human-readable semantic comparison",
     },
     {
-      command: "gossamer diff before.json after.json --json",
+      command: "pagegraph diff before.json after.json --json",
       description: "Emit one versioned JSON diff on stdout",
     },
   ]),

@@ -33,7 +33,7 @@ export interface LoadedSeoGraph {
 }
 
 /**
- * Produces the SEO graph for the `gossamer` CLI. A plain promise on purpose: a
+ * Produces the SEO graph for the `pagegraph` CLI. A plain promise on purpose: a
  * config file must be writable without Effect, which the CLI keeps behind its
  * `bin` (an optional peer dependency).
  */

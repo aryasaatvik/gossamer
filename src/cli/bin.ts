@@ -1,9 +1,9 @@
 #!/usr/bin/env bun
 /**
- * The `gossamer` bin. Deliberately trivial, and deliberately Effect-free.
+ * The `pagegraph` bin. Deliberately trivial, and deliberately Effect-free.
  *
  * Effect and `@effect/platform-bun` are *optional* peer dependencies of
- * `gossamer`: the library entries (`.`, `./react`, `./vite`, `./config`) never
+ * `pagegraph`: the library entries (`.`, `./react`, `./vite`, `./config`) never
  * touch them, so a consumer who only declares SEO on routes and renders heads
  * does not install them. Only this CLI does.
  *
@@ -40,8 +40,8 @@ const main = await import("./main").catch((cause: unknown) => {
     throw cause;
   }
   process.stderr.write(
-    `✗ The \`gossamer\` CLI could not load its runtime dependencies.\n\n` +
-      `  Effect is an optional peer dependency of gossamer — only the CLI needs it.\n` +
+    `✗ The \`pagegraph\` CLI could not load its runtime dependencies.\n\n` +
+      `  Effect is an optional peer dependency of pagegraph — only the CLI needs it.\n` +
       `  Install it where the CLI runs:\n\n` +
       `      bun add -D effect @effect/platform-bun\n\n` +
       `  ${message}\n`,

@@ -10,7 +10,7 @@ Create `src/lib/seo.ts`. Route modules only provide page content; they do not re
 organization, or JSON-LD identity.
 
 ```ts
-import { createSeo, defineJsonLd, jsonLdRef } from "gossamer/react";
+import { createSeo, defineJsonLd, jsonLdRef } from "pagegraph/react";
 
 export const seo = createSeo({
   origin: "https://example.com",
@@ -96,7 +96,7 @@ are useful for dynamic routes such as `/blog/$slug`.
 
 ```ts
 // src/lib/seo/graph.ts
-import { buildSeoGraph } from "gossamer";
+import { buildSeoGraph } from "pagegraph";
 
 import { routeTree } from "../../routeTree.gen";
 
@@ -123,7 +123,7 @@ export const loadSeoGraph = async () =>
 Expose that loader to the CLI with `seo.config.ts` at the app root:
 
 ```ts
-import { defineSeoConfig, viteGraphLoader } from "gossamer/config";
+import { defineSeoConfig, viteGraphLoader } from "pagegraph/config";
 
 export default defineSeoConfig({
   origin: "https://example.com",
@@ -145,7 +145,7 @@ cannot silently ship without `staticData` or `head`:
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 
-import { seoRouteConfig } from "gossamer/vite";
+import { seoRouteConfig } from "pagegraph/vite";
 
 export default defineConfig({
   plugins: [
@@ -165,7 +165,7 @@ Wire the pure projections into your Start server routes. The response shape is o
 code, so it works with whichever Start server-route convention your app uses:
 
 ```ts
-import { renderRobots, renderSitemap } from "gossamer";
+import { renderRobots, renderSitemap } from "pagegraph";
 import { loadSeoGraph } from "../lib/seo/graph";
 
 export async function sitemapResponse() {
@@ -199,24 +199,24 @@ The CLI evaluates `seo.config.ts` inside a headless Vite server, so aliases and 
 resolve the same way they do in the app:
 
 ```bash
-gossamer check
-gossamer graph --format mermaid
-gossamer inspect /docs
-gossamer sitemap
-gossamer robots
+pagegraph check
+pagegraph graph --format mermaid
+pagegraph inspect /docs
+pagegraph sitemap
+pagegraph robots
 
-gossamer audit http://localhost:3000 --allow-private --probe-only --output-dir .audit/current
+pagegraph audit http://localhost:3000 --allow-private --probe-only --output-dir .audit/current
 before="$(find .audit/before -type f -name '*.json' -print | sort | tail -n 1)"
 after="$(find .audit/current -type f -name '*.json' -print | sort | tail -n 1)"
 if [ -z "$before" ] || [ -z "$after" ]; then
   echo "expected one JSON audit artifact in each directory" >&2
   exit 1
 fi
-gossamer diff "$before" "$after"
-gossamer diff "$before" "$after" --json | jq
+pagegraph diff "$before" "$after"
+pagegraph diff "$before" "$after" --json | jq
 ```
 
-`gossamer check` exits non-zero for structural graph violations. `gossamer diff` exits non-zero only when
+`pagegraph check` exits non-zero for structural graph violations. `pagegraph diff` exits non-zero only when
 coverage or scanner quality regresses; timestamps and raw Lighthouse timings are deliberately
 ignored. Each audit invocation writes one timestamped JSON artifact and one Markdown report; the
 globs above select those JSON artifacts for a reviewable before/after comparison.

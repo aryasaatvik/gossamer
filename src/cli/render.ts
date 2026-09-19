@@ -1,5 +1,5 @@
 /**
- * Human-plane formatters for the `gossamer` CLI. Every function here is pure and
+ * Human-plane formatters for the `pagegraph` CLI. Every function here is pure and
  * returns a plain string (no ANSI, no I/O) — commands print it to stdout via
  * `printText`, and the machine plane (`--json` / `--format json`) bypasses this
  * module entirely. Keeping it string-in/string-out makes the formatting unit-
@@ -192,7 +192,7 @@ export const renderLiveReport = (report: LiveHeadReport): string => {
   return lines.join("\n");
 };
 
-/** `gossamer check` report: violations grouped by severity, with a headline count. */
+/** `pagegraph check` report: violations grouped by severity, with a headline count. */
 export const renderViolations = (violations: ReadonlyArray<Violation>): string => {
   const structural = violations.filter((violation) => violation.severity === "structural");
   const editorial = violations.filter((violation) => violation.severity === "editorial");

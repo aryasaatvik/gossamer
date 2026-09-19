@@ -12,11 +12,11 @@ export const sitemapCommand = Command.make("sitemap", {
   Command.withDescription("Render sitemap.xml from the graph (the exact server-route output)"),
   Command.withExamples([
     {
-      command: "gossamer sitemap",
+      command: "pagegraph sitemap",
       description: "The sitemap XML, under the origin from seo.config.ts",
     },
     {
-      command: "gossamer sitemap --origin https://preview.example.com --no-indexable",
+      command: "pagegraph sitemap --origin https://preview.example.com --no-indexable",
       description: "Sitemap body is host-independent; robots.txt is what gates crawling",
     },
   ]),

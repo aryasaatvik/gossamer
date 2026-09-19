@@ -51,7 +51,7 @@ export const AuditPolicy = Schema.Struct({
 });
 export type AuditPolicy = typeof AuditPolicy.Type;
 
-/** JSON/Markdown report contract for `gossamer audit`. */
+/** JSON/Markdown report contract for `pagegraph audit`. */
 export const AuditReport = Schema.Struct({
   schemaVersion: Schema.Literal(1),
   generatedAt: Schema.String,

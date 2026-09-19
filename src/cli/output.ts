@@ -1,5 +1,5 @@
 /**
- * Shared surfaces for the `gossamer` CLI. The three output planes:
+ * Shared surfaces for the `pagegraph` CLI. The three output planes:
  *  - **data** → stdout via {@link printJson} / {@link printText}. Under `--json`
  *    this is the *only* thing on stdout: no ANSI, no status, valid JSON.
  *  - **status** → stderr via Effect leveled logging (`Effect.logInfo` /

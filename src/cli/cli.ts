@@ -9,26 +9,26 @@ import { robotsCommand } from "./commands/robots";
 import { sitemapCommand } from "./commands/sitemap";
 
 /**
- * Root `gossamer` command. Every subcommand reads the same SEO graph that render
+ * Root `pagegraph` command. Every subcommand reads the same SEO graph that render
  * time, the sitemap/robots server routes, and the test suite read — the one the
  * app's `seo.config.ts` loader produces. Route declarations are the single
  * source of truth, and these are pure views over them.
  */
-export const cli = Command.make("gossamer").pipe(
+export const cli = Command.make("pagegraph").pipe(
   Command.withDescription(
     "Inspect and audit a TanStack Start SEO graph: sitemap, robots, cross-links, structured data, and link decisions.",
   ),
   Command.withExamples([
     {
-      command: "gossamer audit https://example.com",
+      command: "pagegraph audit https://example.com",
       description: "Audit any deployed website",
     },
     {
-      command: "gossamer check",
+      command: "pagegraph check",
       description: "Fail (exit 1) on any structural SEO violation",
     },
-    { command: "gossamer graph", description: "Print the SEO graph as a tree" },
-    { command: "gossamer sitemap", description: "Render sitemap.xml" },
+    { command: "pagegraph graph", description: "Print the SEO graph as a tree" },
+    { command: "pagegraph sitemap", description: "Render sitemap.xml" },
   ]),
   Command.withSubcommands([
     auditCommand,

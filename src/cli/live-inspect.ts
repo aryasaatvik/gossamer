@@ -1,5 +1,5 @@
 /**
- * `gossamer inspect <url> --live`: fetch a URL and hand its body to the pure head
+ * `pagegraph inspect <url> --live`: fetch a URL and hand its body to the pure head
  * validator in `../inspect-html`. The fetch is all that lives here — the
  * validation is a library capability, not a CLI one, so it stays out of the
  * Effect-bearing half of the package.
@@ -14,7 +14,7 @@ import { SeoCliError } from "./output";
 export const fetchAndInspect = (url: string): Effect.Effect<LiveHeadReport, SeoCliError> =>
   Effect.tryPromise({
     try: async () => {
-      const response = await fetch(url, { headers: { "user-agent": "gossamer-cli" } });
+      const response = await fetch(url, { headers: { "user-agent": "pagegraph-cli" } });
       const html = await response.text();
       return inspectHtml(url, response.status, html);
     },

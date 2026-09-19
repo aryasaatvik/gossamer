@@ -1,5 +1,5 @@
 /**
- * `gossamer/react` — the render layer.
+ * `pagegraph/react` — the render layer.
  *
  * Bind the site identity once with {@link createSeo} and re-export the result
  * from one app module; route files then import `seoHead` from there and pass

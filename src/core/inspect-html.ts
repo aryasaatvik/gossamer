@@ -3,7 +3,7 @@
  * (description/robots/og/twitter), canonical link, and `application/ld+json`
  * blocks, with a minimal per-type JSON-LD check.
  *
- * This is the pure half of `gossamer inspect --live` — the half worth having on its
+ * This is the pure half of `pagegraph inspect --live` — the half worth having on its
  * own. The CLI fetches a URL and hands the body here; a test suite can render a
  * page and hand *that* here, asserting the head it actually ships. Both get the
  * same verdict, because it is the same function.
@@ -16,7 +16,7 @@
  * constructs) is out of scope. This validates *rendered output*, not arbitrary
  * HTML.
  *
- * `issues` are blocking: a non-empty list makes `gossamer inspect --live` exit 1.
+ * `issues` are blocking: a non-empty list makes `pagegraph inspect --live` exit 1.
  * Required tags are `<title>`, `meta[name=description]`, and
  * `link[rel=canonical]`; any JSON-LD that fails to parse or fails its minimal
  * schema is also blocking.
@@ -212,5 +212,5 @@ export const inspectHtml = (url: string, status: number, html: string): LiveHead
   return { url, status, title, description, canonical, robots, og, twitter, jsonLd, issues };
 };
 
-/** A non-empty `issues` list fails `gossamer inspect --live` (exit 1). */
+/** A non-empty `issues` list fails `pagegraph inspect --live` (exit 1). */
 export const hasBlockingIssues = (report: LiveHeadReport): boolean => report.issues.length > 0;

@@ -276,7 +276,7 @@ const requestPinned = async (
       headers: {
         accept: request.accept,
         host: url.host,
-        "user-agent": "gossamer/0.4 (+https://tanstack.com)",
+        "user-agent": "pagegraph/0.4 (+https://tanstack.com)",
       },
       agent: false,
       lookup: pinnedLookup(addresses),

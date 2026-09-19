@@ -1,14 +1,14 @@
 /**
  * The SEO check engine: a set of rules run against the derived {@link SeoGraph}.
- * Pure — no I/O, no `clientEnv`, no React. The CLI's `gossamer check` command and the
+ * Pure — no I/O, no `clientEnv`, no React. The CLI's `pagegraph check` command and the
  * vitest suite both call {@link checkGraph}; nothing else derives correctness.
  *
  * Two severities, mapped to the CLI's exit contract:
  *  - `structural` — a declaration is internally broken (a link points nowhere, a
  *    card would render empty, a page contradicts its own robots/sitemap intent).
- *    Any structural violation fails `gossamer check` (exit 1); these must not ship.
+ *    Any structural violation fails `pagegraph check` (exit 1); these must not ship.
  *  - `editorial` — a quality smell (duplicate or mis-sized titles/descriptions).
- *    Reported as warnings; `gossamer check` still exits 0 when only these are present.
+ *    Reported as warnings; `pagegraph check` still exits 0 when only these are present.
  *
  * The graph only knows what declarations and frontmatter carry, so the rules are
  * scoped to that: per-node title/description live only on collection *instances*,
@@ -317,6 +317,6 @@ export function checkGraph(graph: SeoGraph): Array<Violation> {
   );
 }
 
-/** Structural violations fail `gossamer check`; editorial-only stays green. */
+/** Structural violations fail `pagegraph check`; editorial-only stays green. */
 export const hasStructuralViolations = (violations: ReadonlyArray<Violation>): boolean =>
   violations.some((violation) => violation.severity === "structural");

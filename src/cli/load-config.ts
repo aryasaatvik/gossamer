@@ -1,9 +1,9 @@
 /**
- * Config discovery and graph acquisition for the `gossamer` CLI.
+ * Config discovery and graph acquisition for the `pagegraph` CLI.
  *
  * The CLI knows how to *view* a graph; the host knows how to *produce* one. That
  * seam is a `seo.config.ts` at the app root, found by walking up from the working
- * directory — so `bun run gossamer check` works from anywhere inside the app.
+ * directory — so `bun run pagegraph check` works from anywhere inside the app.
  *
  * The config is a TypeScript module the CLI imports directly, which is one of the
  * reasons the `bin` runs under Bun (the other being the synchronous fd-1 flush in
@@ -68,7 +68,7 @@ export const loadSeoConfig: Effect.Effect<SeoCliConfig, SeoCliError> = Effect.ge
   const configPath = findConfigFile(cwd);
   if (configPath === undefined) {
     return yield* new SeoCliError({
-      message: `No ${CONFIG_FILENAMES[0]} in ${cwd} or any parent directory. Create one that exports \`defineSeoConfig({ origin, disallow, loadGraph })\` from "gossamer/config".`,
+      message: `No ${CONFIG_FILENAMES[0]} in ${cwd} or any parent directory. Create one that exports \`defineSeoConfig({ origin, disallow, loadGraph })\` from "pagegraph/config".`,
     });
   }
 
