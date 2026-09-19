@@ -11,11 +11,11 @@ import { jsonFlag, printJson, printText, SeoCliError } from "../output";
 import { renderLiveReport, renderNodeReport } from "../render";
 import { serializeNode } from "../serialize";
 
-const targetArg = Argument.string("target").pipe(
+const targetArg = Argument.String("target").pipe(
   Argument.withDescription("A route path (e.g. /pricing), or a full URL with --live"),
 );
 
-const liveFlag = Flag.boolean("live").pipe(
+const liveFlag = Flag.Boolean("live").pipe(
   Flag.withDescription("Fetch the URL and inspect its rendered <head> and JSON-LD"),
   Flag.withDefault(false),
 );

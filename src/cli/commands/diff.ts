@@ -10,10 +10,10 @@ import { AuditReport } from "../../audit/model";
 import { renderAuditDiff } from "../../audit/render";
 import { jsonFlag, printJson, printText, SeoCliError } from "../output";
 
-const before = Argument.string("before.json").pipe(
+const before = Argument.String("before.json").pipe(
   Argument.withDescription("Earlier pagegraph audit JSON artifact"),
 );
-const after = Argument.string("after.json").pipe(
+const after = Argument.String("after.json").pipe(
   Argument.withDescription("Later pagegraph audit JSON artifact"),
 );
 
