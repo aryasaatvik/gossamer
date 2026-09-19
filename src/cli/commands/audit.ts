@@ -11,52 +11,52 @@ import { makeLighthouseScanner } from "../../audit/scanners/lighthouse";
 import { renderAuditMarkdown, writeAuditFiles } from "../../audit/render";
 import { jsonFlag, printJson, printText, SeoCliError } from "../output";
 
-const urls = Argument.string("url").pipe(
+const urls = Argument.String("url").pipe(
   Argument.withDescription("One or more absolute http(s) URLs"),
   Argument.variadic({ min: 1 }),
 );
-const allowPrivate = Flag.boolean("allow-private").pipe(
+const allowPrivate = Flag.Boolean("allow-private").pipe(
   Flag.withDescription(
     "Allow localhost and private addresses (local development only)",
   ),
   Flag.withDefault(false),
 );
-const probeOnly = Flag.boolean("probe-only").pipe(
+const probeOnly = Flag.Boolean("probe-only").pipe(
   Flag.withDescription("Run HTTP probes without Lighthouse"),
   Flag.withDefault(false),
 );
-const hosted = Flag.boolean("hosted").pipe(
+const hosted = Flag.Boolean("hosted").pipe(
   Flag.withDescription("Opt in to external agent-readiness scanners"),
   Flag.withDefault(false),
 );
-const formFactor = Flag.choice("form-factor", [
+const formFactor = Flag.Literals("form-factor", [
   "mobile",
   "desktop",
 ] as const).pipe(
   Flag.withDescription("Lighthouse form factor"),
   Flag.withDefault("mobile"),
 );
-const runs = Flag.integer("runs").pipe(
+const runs = Flag.Int("runs").pipe(
   Flag.withDescription("Lighthouse runs per target"),
   Flag.withDefault(1),
 );
-const concurrency = Flag.integer("concurrency").pipe(
+const concurrency = Flag.Int("concurrency").pipe(
   Flag.withDescription("Maximum concurrent target/scanner pairs"),
   Flag.withDefault(4),
 );
-const requestTimeoutMs = Flag.integer("request-timeout-ms").pipe(
+const requestTimeoutMs = Flag.Int("request-timeout-ms").pipe(
   Flag.withDescription("HTTP request timeout in milliseconds"),
   Flag.withDefault(15_000),
 );
-const scannerTimeoutMs = Flag.integer("scanner-timeout-ms").pipe(
+const scannerTimeoutMs = Flag.Int("scanner-timeout-ms").pipe(
   Flag.withDescription("Lighthouse and hosted scanner timeout in milliseconds"),
   Flag.withDefault(180_000),
 );
-const maxBodyBytes = Flag.integer("max-body-bytes").pipe(
+const maxBodyBytes = Flag.Int("max-body-bytes").pipe(
   Flag.withDescription("Maximum captured response bytes"),
   Flag.withDefault(2_000_000),
 );
-const outputDir = Flag.string("output-dir").pipe(
+const outputDir = Flag.String("output-dir").pipe(
   Flag.withDescription(
     "Atomically write timestamped JSON and Markdown artifacts",
   ),

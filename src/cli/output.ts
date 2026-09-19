@@ -20,7 +20,7 @@ export class SeoCliError extends Data.TaggedError("SeoCliError")<{
 }> {}
 
 /** Machine-readable output. When set, stdout is exactly the JSON payload. */
-export const jsonFlag = Flag.boolean("json").pipe(
+export const jsonFlag = Flag.Boolean("json").pipe(
   Flag.withDescription("Emit the payload as JSON on stdout (no status, no color)"),
   Flag.withDefault(false),
 );
@@ -30,7 +30,7 @@ export const jsonFlag = Flag.boolean("json").pipe(
  * static default: the fallback is the host's own `origin` from `seo.config.ts`,
  * which is not known until the config is loaded. Resolve it with {@link originOf}.
  */
-export const originFlag = Flag.string("origin").pipe(
+export const originFlag = Flag.String("origin").pipe(
   Flag.withDescription("Absolute origin for URLs (default: `origin` from seo.config.ts)"),
   Flag.optional,
 );
@@ -43,7 +43,7 @@ export const originOf = (flag: Option.Option<string>, configured: string): strin
  * `--indexable` (default true) / `--no-indexable`. A non-indexable host yields a
  * disallow-all robots.txt with no Sitemap line — the preview posture.
  */
-export const indexableFlag = Flag.boolean("indexable").pipe(
+export const indexableFlag = Flag.Boolean("indexable").pipe(
   Flag.withDescription("Render as an indexable host; --no-indexable = disallow-all robots.txt"),
   Flag.withDefault(true),
 );

@@ -7,12 +7,12 @@ import { printJson, printText } from "../output";
 import { orphanPaths, renderMermaid, renderOrphans, renderTree } from "../render";
 import { serializeGraph } from "../serialize";
 
-const formatFlag = Flag.choice("format", ["tree", "mermaid", "json"]).pipe(
+const formatFlag = Flag.Literals("format", ["tree", "mermaid", "json"]).pipe(
   Flag.withDescription("Output format: tree (default), mermaid diagram, or json"),
   Flag.withDefault("tree"),
 );
 
-const orphansFlag = Flag.boolean("orphans").pipe(
+const orphansFlag = Flag.Boolean("orphans").pipe(
   Flag.withDescription("Show only orphan nodes (nothing links to them)"),
   Flag.withDefault(false),
 );
