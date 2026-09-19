@@ -74,12 +74,20 @@ describe("extractAnchors", () => {
     expect(anchors.map((anchor) => anchor.href)).toEqual(["https://example.com/real"]);
   });
 
-  it("skips a <base> without href and uses the next resolvable one", () => {
+  it("skips a <base> without href and uses the next one that has it", () => {
     const anchors = extractAnchors(
       `<base target="_blank"><base href="/app/"><a href="x">X</a>`,
       "https://example.com/page",
     );
     expect(anchors.map((anchor) => anchor.href)).toEqual(["https://example.com/app/x"]);
+  });
+
+  it("lets the first empty <base href> win and ignores later bases", () => {
+    const anchors = extractAnchors(
+      `<base href=""><base href="/ignored/"><a href="x">X</a>`,
+      "https://example.com/page",
+    );
+    expect(anchors.map((anchor) => anchor.href)).toEqual(["https://example.com/x"]);
   });
 });
 

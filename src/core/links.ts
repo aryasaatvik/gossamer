@@ -77,22 +77,24 @@ const hrefValue = (attributes: string): string | undefined => {
 };
 
 /**
- * The document base URL: the first `<base>` with a resolvable `href` wins,
- * resolved against the response URL. Per HTML a `<base>` may carry only
- * `target`, and later `<base href>` elements are ignored, so a `<base>` without
- * `href` (or with an invalid one) is skipped rather than ending the search.
- * With no usable base, links resolve against the response URL.
+ * The document base URL. Browsers use the first `<base>` element that has an
+ * `href` attribute and ignore every later one, so a `<base>` carrying only
+ * `target` is skipped, but the first `<base href>` wins even when its value is
+ * empty (it then resolves to the document URL) or invalid (the base is ignored,
+ * resolving to the document URL). With no `<base href>` at all, links resolve
+ * against the response URL.
  */
 const documentBase = (html: string, responseUrl: URL): URL => {
   BASE_TAG.lastIndex = 0;
   let tag: RegExpExecArray | null;
   while ((tag = BASE_TAG.exec(html)) !== null) {
     const href = hrefValue(tag[0]);
-    if (href === undefined || href.length === 0) continue;
+    if (href === undefined) continue;
+    if (href.length === 0) return responseUrl;
     try {
       return new URL(href, responseUrl);
     } catch {
-      continue;
+      return responseUrl;
     }
   }
   return responseUrl;
