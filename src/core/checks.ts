@@ -19,6 +19,7 @@
 
 import type { SitemapPolicy } from "./declare";
 import type { SeoGraph, SeoNode } from "./graph";
+import { isSitemapEligible } from "./projections";
 
 export type Severity = "structural" | "editorial";
 
@@ -28,6 +29,19 @@ export interface Violation {
   path?: string | undefined;
   message: string;
   fix?: string | undefined;
+}
+
+/**
+ * A contextual-link coverage rule: every sitemap-eligible page matching the
+ * `path` glob must have at least `minInbound` incoming `related` edges. Unlike
+ * the static rules, these come from project policy (a CLI flag or
+ * `seo.config.ts`), because "which pages are money pages" is app knowledge.
+ */
+export interface CoverageRule {
+  /** Path glob: `*` matches within a segment, `**` matches across segments. */
+  readonly path: string;
+  /** Minimum incoming contextual (`related`) edges the matched page needs. */
+  readonly minInbound: number;
 }
 
 /** A single finding before its rule's `severity`/`rule` name are attached. */
@@ -304,10 +318,17 @@ const CHECK_RULES: ReadonlyArray<CheckRule> = [
   },
 ];
 
-/** Run every rule against the graph and return the flat list of violations. */
-export function checkGraph(graph: SeoGraph): Array<Violation> {
-  return CHECK_RULES.flatMap((rule) =>
-    rule.evaluate(graph).map((raw) => ({
+/**
+ * Run every static rule against the graph, then any caller-supplied
+ * {@link CoverageRule}s, and return the flat list of violations. With no
+ * `coverage` option the result is exactly the static rule set.
+ */
+export function checkGraph(
+  graph: SeoGraph,
+  options: { readonly coverage?: ReadonlyArray<CoverageRule> | undefined } = {},
+): Array<Violation> {
+  const violations: Array<Violation> = CHECK_RULES.flatMap((rule) =>
+    rule.evaluate(graph).map((raw): Violation => ({
       severity: rule.severity,
       rule: rule.name,
       path: raw.path,
@@ -315,6 +336,70 @@ export function checkGraph(graph: SeoGraph): Array<Violation> {
       fix: raw.fix,
     })),
   );
+  const coverage = options.coverage;
+  if (coverage !== undefined && coverage.length > 0) {
+    violations.push(...checkCoverage(graph, coverage));
+  }
+  return violations;
+}
+
+/** Escape a glob for `RegExp`, then expand `**`, `*`, and `?` to path-aware forms. */
+const globToRegExp = (glob: string): RegExp => {
+  const escaped = glob.replace(/[.+^${}()|[\]\\]/g, "\\$&");
+  const source = escaped
+    .replace(/\*\*/g, "\u0000")
+    .replace(/\*/g, "[^/]*")
+    .replace(/\?/g, "[^/]")
+    .replace(/\u0000/g, ".*");
+  return new RegExp(`^${source}$`);
+};
+
+/**
+ * Enforce contextual-link coverage rules: a named set of sitemap-eligible
+ * "money" pages each needs `minInbound` incoming `related` edges. Only
+ * `related` edges count — breadcrumb ancestry is navigation, not context.
+ *
+ * A rule that matches no sitemap-eligible page is itself a violation: a typo or
+ * a rule aimed at a noindex page would otherwise pass silently forever.
+ */
+export function checkCoverage(
+  graph: SeoGraph,
+  rules: ReadonlyArray<CoverageRule>,
+): Array<Violation> {
+  const violations: Array<Violation> = [];
+  for (const rule of rules) {
+    const matcher = globToRegExp(rule.path);
+    const matched = [...graph.nodes.values()].filter((node) => matcher.test(node.path));
+    const eligible = matched.filter(isSitemapEligible);
+
+    if (eligible.length === 0) {
+      violations.push({
+        severity: "structural",
+        rule: "coverage-rule-unmatched",
+        message:
+          matched.length === 0
+            ? `Coverage rule "${rule.path}" matches no page in the graph.`
+            : `Coverage rule "${rule.path}" matches only pages that are not sitemap-eligible.`,
+        fix: "Point the rule at a sitemap-eligible path, or drop it.",
+      });
+      continue;
+    }
+
+    for (const node of eligible) {
+      const inbound = graph.edges.filter(
+        (edge) => edge.type === "related" && edge.to === node.path,
+      ).length;
+      if (inbound >= rule.minInbound) continue;
+      violations.push({
+        severity: "structural",
+        rule: "inbound-link-coverage",
+        path: node.path,
+        message: `"${node.path}" has ${inbound} incoming contextual link(s); the coverage rule requires ${rule.minInbound}.`,
+        fix: `Add ${rule.minInbound - inbound} contextual (related) edge(s) pointing at "${node.path}".`,
+      });
+    }
+  }
+  return violations;
 }
 
 /** Structural violations fail `pagegraph check`; editorial-only stays green. */

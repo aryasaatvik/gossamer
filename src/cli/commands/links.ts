@@ -13,16 +13,28 @@ import { readFileSync } from "node:fs";
 import { TypeSafeClient, TypeSafeDecisionModel } from "@effect/ai-typesafe";
 
 import { crawlRenderedPages } from "../../audit/crawl";
+import {
+  candidateSourceText,
+  decodeRenderedEdges,
+  generateLinkCandidates,
+} from "../../core/link-candidates";
 import { buildRenderedGraph, diffLinkGraph, type SimpleEdge } from "../../core/links";
 import {
   decideLinks,
   decodeLinkCandidates,
   DEFAULT_LINK_THRESHOLD,
   type LinkCandidate,
+  type LinksDecideReport,
 } from "../../links/decide";
-import { acquireGraph, loadSeoConfigOptional } from "../load-config";
+import { acquireGraph, loadSeoConfig, loadSeoConfigOptional } from "../load-config";
 import { jsonFlag, printJson, printText, SeoCliError } from "../output";
-import { renderLinksDecideReport, renderLinksReport, type LinksVerifyReport } from "../render";
+import {
+  renderLinksCandidatesReport,
+  renderLinksDecideReport,
+  renderLinksReport,
+  type LinksCandidatesReport,
+  type LinksVerifyReport,
+} from "../render";
 
 const messageOf = (cause: unknown): string =>
   cause instanceof Error ? cause.message : String(cause);
@@ -331,12 +343,135 @@ const linksDecideCommand = Command.make("decide", {
   ),
 );
 
+const candidatesLimitFlag = Flag.Int("limit").pipe(
+  Flag.withDescription("Maximum candidates to output after ordering"),
+  Flag.withDefault(50),
+);
+const clusterFlag = Flag.String("cluster").pipe(
+  Flag.withDescription("Restrict to a cluster: a top-level section or a kind (repeatable)"),
+  Flag.between(0, 64),
+);
+const renderedFlag = Flag.String("rendered").pipe(
+  Flag.withDescription("JSON file of already-rendered edges to exclude (array or { edges })"),
+  Flag.optional,
+);
+const decideFlag = Flag.Boolean("decide").pipe(
+  Flag.withDescription("Also hand the candidate set to Jev for recommendations and confidence"),
+  Flag.withDefault(false),
+);
+
+/** Read already-rendered edges from an optional JSON file; absent input is no exclusions. */
+const readRenderedEdges = (
+  file: string | undefined,
+): Effect.Effect<ReadonlyArray<SimpleEdge>, SeoCliError> =>
+  file === undefined
+    ? Effect.succeed([])
+    : Effect.try({
+        try: () => decodeRenderedEdges(JSON.parse(readFileSync(file, "utf8"))),
+        catch: (cause) =>
+          new SeoCliError({
+            message: `Could not read rendered edges from ${file}: ${messageOf(cause)}`,
+          }),
+      });
+
+const linksCandidatesCommand = Command.make("candidates", {
+  json: jsonFlag,
+  limit: candidatesLimitFlag,
+  cluster: clusterFlag,
+  rendered: renderedFlag,
+  decide: decideFlag,
+  threshold: thresholdFlag,
+  model: modelFlag,
+  concurrency: concurrencyFlag,
+}).pipe(
+  Command.withDescription(
+    "Propose reviewable contextual links from the declared graph, clustered and not already connected",
+  ),
+  Command.withExamples([
+    {
+      command: "pagegraph links candidates",
+      description: "Propose clustered contextual-link candidates as a reviewable plan",
+    },
+    {
+      command: "pagegraph links candidates --cluster blog --limit 20",
+      description: "Only the /blog cluster, capped at 20 pairs",
+    },
+    {
+      command: "pagegraph links candidates --rendered rendered.json --json | jq",
+      description: "Exclude anchors already served, and emit versioned JSON",
+    },
+    {
+      command: "pagegraph links candidates --decide",
+      description: "Also ask Jev which candidates have a real reason (needs TYPESAFE_API_KEY)",
+    },
+  ]),
+  Command.withHandler(
+    Effect.fn("SeoCli.linksCandidates")(function* (options) {
+      const limit = yield* positive("limit", options.limit);
+      const threshold = yield* checkThreshold(options.threshold);
+      const concurrency = yield* positive("concurrency", options.concurrency);
+
+      const config = yield* loadSeoConfig;
+      const graph = yield* Effect.scoped(acquireGraph(config));
+      const renderedEdges = yield* readRenderedEdges(Option.getOrUndefined(options.rendered));
+
+      const result = generateLinkCandidates(graph, {
+        limit,
+        clusters: options.cluster,
+        renderedEdges,
+      });
+
+      let decisions: LinksDecideReport | null = null;
+      if (options.decide) {
+        if (process.env.TYPESAFE_API_KEY === undefined || process.env.TYPESAFE_API_KEY === "") {
+          return yield* new SeoCliError({
+            message:
+              "TYPESAFE_API_KEY is not set; `--decide` answers through TypeSafe System One.",
+          });
+        }
+        const candidates: ReadonlyArray<LinkCandidate> = result.candidates.map((pair) => {
+          const node = graph.nodes.get(pair.source);
+          return {
+            sourceUrl: pair.source,
+            destinationUrl: pair.destination,
+            sourceText: node === undefined ? pair.source : candidateSourceText(node),
+          };
+        });
+        decisions = yield* decideLinks(candidates, {
+          model: options.model,
+          threshold,
+          concurrency,
+        }).pipe(
+          Effect.provide(typeSafeDecisionModel(options.model)),
+          Effect.mapError(decisionErrorMessage),
+        );
+      }
+
+      const report: LinksCandidatesReport = {
+        kind: "links-candidates",
+        schemaVersion: 1,
+        limit,
+        total: result.total,
+        truncated: result.truncated,
+        clusters: result.clusters,
+        candidates: result.candidates,
+        rendered: Option.isSome(options.rendered),
+        decisions,
+      };
+
+      if (options.json) yield* printJson(report);
+      else yield* printText(renderLinksCandidatesReport(report));
+    }),
+  ),
+);
+
 /**
- * `pagegraph links` groups rendered link-graph capabilities. `verify` crawls
- * served HTML and reports what a crawler actually receives; `decide` answers
- * the link decisions over a candidate set through TypeSafe System One.
+ * `pagegraph links` groups link-graph capabilities. `verify` crawls served HTML
+ * and reports what a crawler actually receives; `candidates` proposes contextual
+ * links from the declared graph; `decide` answers the link decisions over a
+ * candidate set through TypeSafe System One.
  */
 export const linksCommand = Command.make("links").pipe(
-  Command.withDescription("Rendered link-graph verification and link decisions"),
-  Command.withSubcommands([linksVerifyCommand, linksDecideCommand]),
+  Command.withDescription("Rendered link-graph verification, candidate generation, and link decisions"),
+  Command.withSubcommands([linksVerifyCommand, linksCandidatesCommand, linksDecideCommand]),
 );

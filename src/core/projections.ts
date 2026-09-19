@@ -57,7 +57,7 @@ const escapeXml = (value: string): string =>
  * a redirect, is not robots-noindexed, and is not a param template (a route whose
  * path still contains a `$` segment — those exist only so their instances inherit).
  */
-function isSitemapEligible(node: SeoNode): boolean {
+export function isSitemapEligible(node: SeoNode): boolean {
   if (node.policy.redirectTo !== undefined) return false;
   if (node.policy.robots?.includes("noindex")) return false;
   if (!node.policy.sitemap) return false; // false or absent

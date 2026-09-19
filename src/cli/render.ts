@@ -9,6 +9,7 @@
 import type { Violation } from "../core/checks";
 import type { SeoGraph, SeoNode } from "../core/graph";
 import type { LiveHeadReport } from "../core/inspect-html";
+import type { LinkCandidatePair, LinkClusterSummary } from "../core/link-candidates";
 import type { SimpleEdge } from "../core/links";
 import type { NodeReport } from "../core/projections";
 import type { LinkDecisionRecord, LinksDecideReport, LinkVerdict } from "../links/decide";
@@ -365,4 +366,61 @@ export const renderLinksDecideReport = (report: LinksDecideReport): string => {
   }
 
   return lines.join("\n").trimEnd();
+};
+
+/**
+ * `pagegraph links candidates` report: a reviewable proposal of contextual
+ * pairs, grouped by cluster, optionally carrying Jev's decisions. Nothing here
+ * is applied — the plan is the end product. This is the same object `--json`
+ * emits.
+ */
+export interface LinksCandidatesReport {
+  readonly kind: "links-candidates";
+  readonly schemaVersion: 1;
+  readonly limit: number;
+  readonly total: number;
+  readonly truncated: boolean;
+  readonly clusters: ReadonlyArray<LinkClusterSummary>;
+  readonly candidates: ReadonlyArray<LinkCandidatePair>;
+  /** True when already-rendered anchors were supplied and excluded. */
+  readonly rendered: boolean;
+  readonly decisions: LinksDecideReport | null;
+}
+
+/** Human `links candidates` report: cluster counts, then each proposed pair. */
+export const renderLinksCandidatesReport = (report: LinksCandidatesReport): string => {
+  const lines: Array<string> = [
+    `${report.total} candidate pair(s) · limit ${report.limit}${
+      report.truncated ? ", truncated" : ""
+    }`,
+    report.rendered
+      ? "Already-rendered anchors were excluded."
+      : "No rendered data supplied; only declared edges were excluded.",
+    "",
+  ];
+
+  if (report.clusters.length > 0) {
+    lines.push("Clusters:", "");
+    for (const cluster of report.clusters) {
+      lines.push(`  ${cluster.key.padEnd(20)} ${cluster.candidates}`);
+    }
+    lines.push("");
+  }
+
+  if (report.candidates.length === 0) {
+    lines.push("No contextual-link candidates — every plausible pair is already connected.");
+    return lines.join("\n");
+  }
+
+  lines.push("Candidates:", "");
+  for (const candidate of report.candidates) {
+    lines.push(`  ${candidate.source} → ${candidate.destination}`);
+    lines.push(`      ${candidate.reason}`);
+  }
+
+  if (report.decisions !== null) {
+    lines.push("", "Jev decisions:", "", renderLinksDecideReport(report.decisions));
+  }
+
+  return lines.join("\n");
 };
