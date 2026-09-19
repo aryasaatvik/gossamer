@@ -22,8 +22,7 @@ flowchart LR
 
 ```bash
 bun add pagegraph
-bun add -D effect @effect/platform-bun   # only if you use the CLI
-bun add -D lighthouse                    # only for `pagegraph audit` performance evidence
+bun add -D lighthouse   # only for `pagegraph audit` performance evidence
 ```
 
 | Entry                        | Exports                                                                                        | Peers                                       |
@@ -33,10 +32,15 @@ bun add -D lighthouse                    # only for `pagegraph audit` performanc
 | `pagegraph/vite`   | `seoRouteConfig` coverage gate                                                                 | `vite`                                      |
 | `pagegraph/config` | `defineSeoConfig`, `viteGraphLoader`                                                           | `vite`                                      |
 | `pagegraph/audit`  | Audit services, scanner protocol, rules, and report schemas                                    | `effect`                                    |
-| `pagegraph` bin                    | CLI over the same graph                                                                        | `effect`, `@effect/platform-bun` (optional) |
+| `pagegraph` bin                   | CLI over the same graph                                                                        | bundled — runs on Bun                        |
 
 The core and React entries have **zero runtime dependencies** — everything above is a
 peer, and only the entries you import need theirs installed.
+
+The CLI **bundles Effect and the TypeSafe provider**, so it needs no Effect peers and does not
+depend on the app's Effect RC; it runs on [Bun](https://bun.sh) (`bunx pagegraph`). `vite` stays a
+peer — the graph commands load your app through Vite at runtime — and `lighthouse` is only needed by
+`pagegraph audit`. Importing `pagegraph/audit` programmatically still needs `effect`.
 
 ## Quick start
 
@@ -302,6 +306,7 @@ pagegraph inspect /pricing      # one node: policy, sitemap status, in/out edges
 pagegraph inspect <url> --live  # fetch a deployed page, validate its rendered <head>
 pagegraph links verify <url>    # crawl served HTML: depth, orphans, declared-vs-rendered
 pagegraph links candidates      # propose contextual links from the declared graph
+pagegraph links decide <file>   # answer typed link questions with Jev (TYPESAFE_API_KEY)
 pagegraph sitemap               # print sitemap.xml
 pagegraph robots                # print robots.txt
 ```
@@ -343,6 +348,24 @@ pagegraph links candidates --cluster blog --limit 20
 pagegraph links candidates --rendered rendered.json --json | jq
 pagegraph links candidates --decide
 ```
+
+### Decide with Jev
+
+`pagegraph links decide` answers two typed questions per candidate — *does the source have a genuine
+reason to link to the destination?* and *is descriptive anchor text already in the copy?* — and
+routes anything inside the confidence band `(1−t, t)` to a `review` bucket instead of auto-applying.
+
+```bash
+pagegraph links decide candidates.json --threshold 0.9
+pagegraph links decide candidates.json --threshold 0.9 --json | jq
+cat candidates.json | pagegraph links decide
+```
+
+Decisions run through [Jev](https://typesafe.ai) via `@effect/ai-typesafe` (model `jev-latest`),
+bundled into the CLI. The API key is read from the **`TYPESAFE_API_KEY` environment variable** — it
+is deliberately not a `seo.config.ts` field, so keys never live in the repo; `seo.config.ts` carries
+non-secret decision settings only. Without a key the command exits 1 with a clear message and an
+empty stdout.
 
 ### Contextual-link coverage
 
