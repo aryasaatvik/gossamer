@@ -250,12 +250,11 @@ try {
   if (!coreSmoke.includes("core exports ok")) throw new Error("Core export smoke test failed");
 
   const executable = path.join(installDirectory, "node_modules", ".bin", "pagegraph");
-  const missingPeers = await run([executable, "--help"], installDirectory);
-  if (
-    missingPeers.exitCode !== 1 ||
-    !missingPeers.stderr.includes("Effect is an optional peer dependency")
-  ) {
-    throw new Error("Packed pagegraph bin did not explain its missing optional Effect peers");
+  // The packed bin must run in the peer-free consumer: Effect is bundled into the
+  // CLI, so no optional Effect peer is required to execute it.
+  const bundledBin = await runSuccessfully([executable, "--help"], installDirectory);
+  if (!bundledBin.includes("pagegraph <subcommand>")) {
+    throw new Error("Packed pagegraph bin did not run standalone (Effect must be bundled)");
   }
 
   await runSuccessfully(

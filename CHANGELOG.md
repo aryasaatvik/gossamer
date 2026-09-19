@@ -1,3 +1,12 @@
+## pagegraph@0.5.1
+
+### Bundle Effect into the CLI
+
+The published `pagegraph` binary now bundles `effect` and `@effect/platform-bun`. It no longer asks
+consumers to install optional Effect peers, and no longer breaks when the consumer resolves a
+different Effect RC — the `effect/unstable/cli` constructors rename between RCs (`Flag.boolean` →
+`Flag.Boolean` at rc.113). The library entries remain Effect-free.
+
 ## pagegraph@0.5.0
 
 ### Compare timestamped SEO audits

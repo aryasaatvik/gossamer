@@ -6,9 +6,9 @@
  *    `--log-level` flag (from `Command.run`) gates them.
  *  - **diagnostics** → stderr: an expected `SeoCliError` prints `✗ <message>`.
  *
- * This module is what `bin.ts` dynamic-imports, and it is the only place Effect
- * enters the package — which is what keeps Effect an *optional* peer dependency
- * that no consumer of `pagegraph` or `pagegraph/react` ever installs.
+ * This is where Effect enters the package. The CLI build bundles Effect into the
+ * binary (see `tsdown.config.mjs`), so CLI users install no Effect peer; the
+ * library entries stay Effect-free.
  *
  * Two Bun-specific wrinkles are handled here:
  *  - `Command.run` writes its help to stdout, so a flag typo would dump the full
