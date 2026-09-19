@@ -245,7 +245,7 @@ severities:
 - **structural** — internally broken declarations; these fail `pagegraph check` (exit 1):
   dead or duplicate edges, path collisions, a redirect in the sitemap, a
   sitemap/noindex contradiction, a `related` target with no `link` card, an
-  instance without a title.
+  instance without a title, or an unmet contextual-link coverage rule.
 - **editorial** — quality smells, reported but non-failing: duplicate or mis-sized
   titles and descriptions.
 
@@ -285,6 +285,8 @@ export default defineSeoConfig({
   origin: "https://example.com",
   disallow: routeConfig.robotsExclusions,
   contentSignal: "search=yes, ai-input=yes, ai-train=yes",
+  // Fail `check` unless each named money page has enough contextual links.
+  coverage: [{ path: "/pricing", minInbound: 2 }, { path: "/features/*", minInbound: 1 }],
   loadGraph: viteGraphLoader({
     root: import.meta.dirname,
     entry: "/lib/seo/graph.ts",
@@ -299,6 +301,7 @@ pagegraph graph                 # the graph as a tree · --format mermaid | json
 pagegraph inspect /pricing      # one node: policy, sitemap status, in/out edges
 pagegraph inspect <url> --live  # fetch a deployed page, validate its rendered <head>
 pagegraph links verify <url>    # crawl served HTML: depth, orphans, declared-vs-rendered
+pagegraph links candidates      # propose contextual links from the declared graph
 pagegraph sitemap               # print sitemap.xml
 pagegraph robots                # print robots.txt
 ```
@@ -317,6 +320,41 @@ framework or config:
 ```bash
 pagegraph links verify https://example.com
 pagegraph links verify https://example.com --limit 25 --json | jq
+```
+
+### Propose contextual links
+
+`pagegraph links candidates` reads the declared graph and proposes
+`(source, destination)` pairs that are plausible contextual links and not already
+connected. Pages are grouped into clusters — a shared top-level section, or the
+same `kind` for root-level pages — and only sitemap-eligible pages are proposed.
+Pairs already declared as a `related` edge are excluded, and `--rendered` accepts
+a JSON dump of already-served anchors (`[{ from, to }]` or `{ edges: [...] }`) to
+exclude those too.
+
+The output is a reviewable plan: human text by default, versioned JSON with
+`--json`. Nothing is applied. `--limit` and `--cluster` bound the plan, and
+`--decide` optionally hands the candidates to Jev for a recommendation and
+confidence per pair (requires `TYPESAFE_API_KEY`):
+
+```bash
+pagegraph links candidates
+pagegraph links candidates --cluster blog --limit 20
+pagegraph links candidates --rendered rendered.json --json | jq
+pagegraph links candidates --decide
+```
+
+### Contextual-link coverage
+
+Declare a contextual-link coverage policy in `seo.config.ts` (a `coverage` array
+of `{ path, minInbound }`), or pass repeatable `--require-inbound "<path-glob>=<n>"`
+flags to override it for one run. `pagegraph check` then fails (exit 1) unless
+every sitemap-eligible page matching the glob has at least `minInbound` incoming
+`related` edges. `*` matches within a path segment and `**` crosses segments; a
+rule that matches no sitemap-eligible page is itself a violation.
+
+```bash
+pagegraph check --require-inbound "/pricing=2" --require-inbound "/features/*=1"
 ```
 
 ### Audit any website

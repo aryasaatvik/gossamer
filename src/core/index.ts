@@ -21,11 +21,25 @@ export type {
   SeoSource,
 } from "./graph";
 
-export { contentSignal, inspectNode, renderRobots, renderSitemap } from "./projections";
+export { contentSignal, inspectNode, isSitemapEligible, renderRobots, renderSitemap } from "./projections";
 export type { NodeReport, ProjectionConfig, RobotsConfig } from "./projections";
 
-export { checkGraph, hasStructuralViolations } from "./checks";
-export type { Severity, Violation } from "./checks";
+export { checkCoverage, checkGraph, hasStructuralViolations } from "./checks";
+export type { CoverageRule, Severity, Violation } from "./checks";
+
+export {
+  candidateSourceText,
+  decodeRenderedEdges,
+  generateLinkCandidates,
+  matchesClusterFilter,
+  undirectedEdgeKey,
+} from "./link-candidates";
+export type {
+  LinkCandidateOptions,
+  LinkCandidatePair,
+  LinkCandidateResult,
+  LinkClusterSummary,
+} from "./link-candidates";
 
 export { hasBlockingIssues, inspectHtml } from "./inspect-html";
 export type { JsonLdReport, LiveHeadReport } from "./inspect-html";
