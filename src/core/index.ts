@@ -31,3 +31,19 @@ export { hasBlockingIssues, inspectHtml } from "./inspect-html";
 export type { JsonLdReport, LiveHeadReport } from "./inspect-html";
 
 export { resolveRouteLink } from "./resolve-route-link";
+
+export {
+  buildRenderedGraph,
+  diffLinkGraph,
+  extractAnchors,
+  normalizePath,
+} from "./links";
+export type {
+  Anchor,
+  AnchorRegion,
+  LinkEdge,
+  LinkGraphDiff,
+  RenderedGraph,
+  RenderedPage,
+  SimpleEdge,
+} from "./links";
