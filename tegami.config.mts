@@ -4,11 +4,11 @@ import { github } from "tegami/plugins/github";
 
 import rootPackage from "./package.json" with { type: "json" };
 
-const REPOSITORY = "aryasaatvik/tanstack-plugin-seo";
-const PACKAGE_ID = "npm:tanstack-plugin-seo";
+const REPOSITORY = "aryasaatvik/gossamer";
+const PACKAGE_ID = "npm:gossamer";
 
 const packageTag = (): TegamiPlugin => ({
-  name: "tanstack-plugin-seo-tag",
+  name: "gossamer-tag",
   enforce: "post",
   initPublishPlan({ plan }) {
     const pkg = this.graph.get(PACKAGE_ID);
@@ -20,7 +20,7 @@ const packageTag = (): TegamiPlugin => ({
   },
 });
 
-if (rootPackage.name !== "tanstack-plugin-seo") {
+if (rootPackage.name !== "gossamer") {
   throw new Error("unexpected release package");
 }
 
@@ -33,7 +33,7 @@ const paper = tegami({
     },
   },
   packages: {
-    "tanstack-plugin-seo": {},
+    "gossamer": {},
   },
   plugins: [
     github({
@@ -50,8 +50,8 @@ const paper = tegami({
           const version = this.graph.get(PACKAGE_ID)?.version;
           return {
             title: version
-              ? `chore(release): prepare tanstack-plugin-seo ${version}`
-              : "chore(release): prepare tanstack-plugin-seo",
+              ? `chore(release): prepare gossamer ${version}`
+              : "chore(release): prepare gossamer",
           };
         },
       },

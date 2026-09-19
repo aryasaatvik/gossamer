@@ -11,9 +11,9 @@ export const robotsCommand = Command.make("robots", {
 }).pipe(
   Command.withDescription("Render robots.txt from the graph (the exact server-route output)"),
   Command.withExamples([
-    { command: "seo robots", description: "The robots.txt, under the origin from seo.config.ts" },
+    { command: "gossamer robots", description: "The robots.txt, under the origin from seo.config.ts" },
     {
-      command: "seo robots --origin https://preview.example.com --no-indexable",
+      command: "gossamer robots --origin https://preview.example.com --no-indexable",
       description: "Disallow-all with no Sitemap line — the preview posture",
     },
   ]),

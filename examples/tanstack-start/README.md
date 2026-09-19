@@ -10,7 +10,7 @@ Create `src/lib/seo.ts`. Route modules only provide page content; they do not re
 organization, or JSON-LD identity.
 
 ```ts
-import { createSeo, defineJsonLd, jsonLdRef } from "tanstack-plugin-seo/react";
+import { createSeo, defineJsonLd, jsonLdRef } from "gossamer/react";
 
 export const seo = createSeo({
   origin: "https://example.com",
@@ -96,7 +96,7 @@ are useful for dynamic routes such as `/blog/$slug`.
 
 ```ts
 // src/lib/seo/graph.ts
-import { buildSeoGraph } from "tanstack-plugin-seo";
+import { buildSeoGraph } from "gossamer";
 
 import { routeTree } from "../../routeTree.gen";
 
@@ -123,7 +123,7 @@ export const loadSeoGraph = async () =>
 Expose that loader to the CLI with `seo.config.ts` at the app root:
 
 ```ts
-import { defineSeoConfig, viteGraphLoader } from "tanstack-plugin-seo/config";
+import { defineSeoConfig, viteGraphLoader } from "gossamer/config";
 
 export default defineSeoConfig({
   origin: "https://example.com",
@@ -145,7 +145,7 @@ cannot silently ship without `staticData` or `head`:
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 
-import { seoRouteConfig } from "tanstack-plugin-seo/vite";
+import { seoRouteConfig } from "gossamer/vite";
 
 export default defineConfig({
   plugins: [
@@ -165,7 +165,7 @@ Wire the pure projections into your Start server routes. The response shape is o
 code, so it works with whichever Start server-route convention your app uses:
 
 ```ts
-import { renderRobots, renderSitemap } from "tanstack-plugin-seo";
+import { renderRobots, renderSitemap } from "gossamer";
 import { loadSeoGraph } from "../lib/seo/graph";
 
 export async function sitemapResponse() {
@@ -199,24 +199,24 @@ The CLI evaluates `seo.config.ts` inside a headless Vite server, so aliases and 
 resolve the same way they do in the app:
 
 ```bash
-seo check
-seo graph --format mermaid
-seo inspect /docs
-seo sitemap
-seo robots
+gossamer check
+gossamer graph --format mermaid
+gossamer inspect /docs
+gossamer sitemap
+gossamer robots
 
-seo audit http://localhost:3000 --allow-private --probe-only --output-dir .audit/current
+gossamer audit http://localhost:3000 --allow-private --probe-only --output-dir .audit/current
 before="$(find .audit/before -type f -name '*.json' -print | sort | tail -n 1)"
 after="$(find .audit/current -type f -name '*.json' -print | sort | tail -n 1)"
 if [ -z "$before" ] || [ -z "$after" ]; then
   echo "expected one JSON audit artifact in each directory" >&2
   exit 1
 fi
-seo diff "$before" "$after"
-seo diff "$before" "$after" --json | jq
+gossamer diff "$before" "$after"
+gossamer diff "$before" "$after" --json | jq
 ```
 
-`seo check` exits non-zero for structural graph violations. `seo diff` exits non-zero only when
+`gossamer check` exits non-zero for structural graph violations. `gossamer diff` exits non-zero only when
 coverage or scanner quality regresses; timestamps and raw Lighthouse timings are deliberately
 ignored. Each audit invocation writes one timestamped JSON artifact and one Markdown report; the
 globs above select those JSON artifacts for a reviewable before/after comparison.

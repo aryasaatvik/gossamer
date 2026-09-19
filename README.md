@@ -1,4 +1,4 @@
-# tanstack-plugin-seo
+# gossamer
 
 Route-declared SEO for TanStack Router. Each route declares its SEO policy once, in
 `staticData.seo` — the sitemap, `robots.txt`, breadcrumbs, JSON-LD, cross-links, and
@@ -13,7 +13,7 @@ flowchart LR
   route --> seograph["SeoGraph<br/>(nodes + edges)"]
   seograph --> sitemap["sitemap.xml"]
   seograph --> robots["robots.txt"]
-  seograph --> check["seo check · CI gate"]
+  seograph --> check["gossamer check · CI gate"]
   route --> head["&lt;head&gt; meta · canonical<br/>Breadcrumbs · JSON-LD"]
   gate["seoRouteConfig (vite)"] -. "fails undeclared pages" .-> route
 ```
@@ -21,19 +21,19 @@ flowchart LR
 ## Install
 
 ```bash
-bun add tanstack-plugin-seo
+bun add gossamer
 bun add -D effect @effect/platform-bun   # only if you use the CLI
-bun add -D lighthouse                    # only for `seo audit` performance evidence
+bun add -D lighthouse                    # only for `gossamer audit` performance evidence
 ```
 
 | Entry                        | Exports                                                                                        | Peers                                       |
 | ---------------------------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------- |
-| `tanstack-plugin-seo`        | `buildSeoGraph`, `renderSitemap`, `renderRobots`, `contentSignal`, `checkGraph`, `inspectHtml` | —                                           |
-| `tanstack-plugin-seo/react`  | `createSeo` → `seoHead`, `Breadcrumbs`, JSON-LD generators                                     | `react`, `@tanstack/react-router`           |
-| `tanstack-plugin-seo/vite`   | `seoRouteConfig` coverage gate                                                                 | `vite`                                      |
-| `tanstack-plugin-seo/config` | `defineSeoConfig`, `viteGraphLoader`                                                           | `vite`                                      |
-| `tanstack-plugin-seo/audit`  | Audit services, scanner protocol, rules, and report schemas                                    | `effect`                                    |
-| `seo` bin                    | CLI over the same graph                                                                        | `effect`, `@effect/platform-bun` (optional) |
+| `gossamer`        | `buildSeoGraph`, `renderSitemap`, `renderRobots`, `contentSignal`, `checkGraph`, `inspectHtml` | —                                           |
+| `gossamer/react`  | `createSeo` → `seoHead`, `Breadcrumbs`, JSON-LD generators                                     | `react`, `@tanstack/react-router`           |
+| `gossamer/vite`   | `seoRouteConfig` coverage gate                                                                 | `vite`                                      |
+| `gossamer/config` | `defineSeoConfig`, `viteGraphLoader`                                                           | `vite`                                      |
+| `gossamer/audit`  | Audit services, scanner protocol, rules, and report schemas                                    | `effect`                                    |
+| `gossamer` bin                    | CLI over the same graph                                                                        | `effect`, `@effect/platform-bun` (optional) |
 
 The core and React entries have **zero runtime dependencies** — everything above is a
 peer, and only the entries you import need theirs installed.
@@ -44,7 +44,7 @@ peer, and only the entries you import need theirs installed.
 
 ```ts
 // lib/seo.ts
-import { createSeo } from "tanstack-plugin-seo/react";
+import { createSeo } from "gossamer/react";
 
 export const { seoHead } = createSeo({
   origin: "https://example.com",
@@ -110,7 +110,7 @@ import {
   defineJsonLd,
   extendJsonLd,
   jsonLdRef,
-} from "tanstack-plugin-seo/react";
+} from "gossamer/react";
 
 export const seo = createSeo({
   // site, organization, and website as above
@@ -170,7 +170,7 @@ silently deduplicates entities.
 
 ```ts
 // lib/seo/graph.ts — also the module the CLI loads
-import { buildSeoGraph } from "tanstack-plugin-seo";
+import { buildSeoGraph } from "gossamer";
 
 export const loadSeoGraph = () =>
   buildSeoGraph({ routeTree, collections: [blogCollection] });
@@ -178,7 +178,7 @@ export const loadSeoGraph = () =>
 
 ```ts
 // routes/sitemap[.]xml.ts — robots[.]txt.ts is symmetric
-import { renderRobots, renderSitemap } from "tanstack-plugin-seo";
+import { renderRobots, renderSitemap } from "gossamer";
 
 renderSitemap(loadSeoGraph(), { origin, indexable: true });
 renderRobots(loadSeoGraph(), {
@@ -198,7 +198,7 @@ Preview hosts (`indexable: false`) drop `contentSignal` and `directives`;
 **4. Gate CI.** The same graph, the same rules, exit 1 on structural violations.
 
 ```bash
-seo check
+gossamer check
 ```
 
 ## Typed paths
@@ -208,7 +208,7 @@ Augment `Register` (the same pattern TanStack Router uses) and `related` /
 compile error, not a dead link:
 
 ```ts
-declare module "tanstack-plugin-seo" {
+declare module "gossamer" {
   interface Register {
     paths: FileRouteTypes["fullPaths"];
     kinds: "page" | "article" | "hub";
@@ -242,7 +242,7 @@ const blogCollection: SeoCollection = {
 `checkGraph` runs every rule against the graph and returns violations at two
 severities:
 
-- **structural** — internally broken declarations; these fail `seo check` (exit 1):
+- **structural** — internally broken declarations; these fail `gossamer check` (exit 1):
   dead or duplicate edges, path collisions, a redirect in the sitemap, a
   sitemap/noindex contradiction, a `related` target with no `link` card, an
   instance without a title.
@@ -257,7 +257,7 @@ neither `staticData` nor `head`:
 
 ```ts
 // vite.config.ts
-import { seoRouteConfig } from "tanstack-plugin-seo/vite";
+import { seoRouteConfig } from "gossamer/vite";
 
 seoRouteConfig({
   outputPath: fileURLToPath(new URL("./lib/route-config.ts", import.meta.url)),
@@ -279,7 +279,7 @@ so path aliases, content plugins, and virtual modules all resolve:
 
 ```ts
 // seo.config.ts
-import { defineSeoConfig, viteGraphLoader } from "tanstack-plugin-seo/config";
+import { defineSeoConfig, viteGraphLoader } from "gossamer/config";
 
 export default defineSeoConfig({
   origin: "https://example.com",
@@ -294,27 +294,27 @@ export default defineSeoConfig({
 ```
 
 ```bash
-seo check                 # CI gate — exit 1 on structural violations
-seo graph                 # the graph as a tree · --format mermaid | json
-seo inspect /pricing      # one node: policy, sitemap status, in/out edges
-seo inspect <url> --live  # fetch a deployed page, validate its rendered <head>
-seo sitemap               # print sitemap.xml
-seo robots                # print robots.txt
+gossamer check                 # CI gate — exit 1 on structural violations
+gossamer graph                 # the graph as a tree · --format mermaid | json
+gossamer inspect /pricing      # one node: policy, sitemap status, in/out edges
+gossamer inspect <url> --live  # fetch a deployed page, validate its rendered <head>
+gossamer sitemap               # print sitemap.xml
+gossamer robots                # print robots.txt
 ```
 
-Stdout is data, stderr is status — `seo check --json | jq` just works.
+Stdout is data, stderr is status — `gossamer check --json | jq` just works.
 
 ### Audit any website
 
-`seo audit` is framework-independent and does not need `seo.config.ts`. It
+`gossamer audit` is framework-independent and does not need `seo.config.ts`. It
 validates target URLs before making requests, follows redirects through the same
 validation boundary, inspects the rendered document and discovery files, and
 can collect Lighthouse evidence through a validating proxy.
 
 ```bash
-seo audit https://example.com
-seo audit https://example.com https://example.com/docs --json | jq
-seo audit https://localhost:3000 --allow-private --probe-only
+gossamer audit https://example.com
+gossamer audit https://example.com https://example.com/docs --json | jq
+gossamer audit https://localhost:3000 --allow-private --probe-only
 ```
 
 The report keeps evidence and findings separate: scanners collect observations;
@@ -333,11 +333,11 @@ Write timestamped reports from two revisions, then compare their semantic SEO
 outcomes without failing on timestamps, timing, or other raw scanner evidence:
 
 ```bash
-seo audit https://example.com --output-dir .audit/before
+gossamer audit https://example.com --output-dir .audit/before
 # deploy or check out the next revision
-seo audit https://example.com --output-dir .audit/after
-seo diff .audit/before/<report>.json .audit/after/<report>.json
-seo diff .audit/before/<report>.json .audit/after/<report>.json --json | jq
+gossamer audit https://example.com --output-dir .audit/after
+gossamer diff .audit/before/<report>.json .audit/after/<report>.json
+gossamer diff .audit/before/<report>.json .audit/after/<report>.json --json | jq
 ```
 
 | Change | Outcome | Exit |
@@ -366,7 +366,7 @@ import {
   checkGraph,
   hasStructuralViolations,
   inspectHtml,
-} from "tanstack-plugin-seo";
+} from "gossamer";
 
 expect(hasStructuralViolations(checkGraph(loadSeoGraph()))).toBe(false);
 
@@ -379,7 +379,7 @@ expect(report.issues).toEqual([]);
 
 The [TanStack Start cookbook](./examples/tanstack-start/README.md) shows the complete wiring in
 one place: route-declared metadata, the graph loader, sitemap and robots projections, JSON-LD,
-the Vite coverage gate, and the CLI inspection and `seo diff` workflow. It is intentionally
+the Vite coverage gate, and the CLI inspection and `gossamer diff` workflow. It is intentionally
 framework-neutral beyond the Start route seams, so you can copy the modules into an existing
 Start app and keep your own route tree and content collections.
 

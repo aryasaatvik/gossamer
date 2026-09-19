@@ -9,8 +9,8 @@ import { renderViolations } from "../render";
 export const checkCommand = Command.make("check", { json: jsonFlag }).pipe(
   Command.withDescription("Check the SEO graph; exit 1 on any structural violation"),
   Command.withExamples([
-    { command: "seo check", description: "Run every rule and print the violations" },
-    { command: "seo check --json", description: "Violations as JSON (exit 1 iff structural)" },
+    { command: "gossamer check", description: "Run every rule and print the violations" },
+    { command: "gossamer check --json", description: "Violations as JSON (exit 1 iff structural)" },
   ]),
   Command.withHandler(
     Effect.fnUntraced(function* ({ json }) {

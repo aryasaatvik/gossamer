@@ -34,7 +34,7 @@ export interface AuditService {
 
 export namespace Audit {
   export class Service extends Context.Service<Service, AuditService>()(
-    "tanstack-plugin-seo/Audit",
+    "gossamer/Audit",
   ) {}
 }
 

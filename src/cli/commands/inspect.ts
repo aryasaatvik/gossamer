@@ -30,14 +30,14 @@ export const inspectCommand = Command.make("inspect", {
   ),
   Command.withExamples([
     {
-      command: "seo inspect /pricing",
+      command: "gossamer inspect /pricing",
       description: "The graph node, policy, and edges for a path",
     },
     {
-      command: "seo inspect https://example.com/pricing --live",
+      command: "gossamer inspect https://example.com/pricing --live",
       description: "Fetch the page and validate its head tags + JSON-LD",
     },
-    { command: "seo inspect /blog/some-post --json", description: "The node report as JSON" },
+    { command: "gossamer inspect /blog/some-post --json", description: "The node report as JSON" },
   ]),
   Command.withHandler(
     Effect.fnUntraced(function* ({ target, live, json }) {
@@ -58,7 +58,7 @@ export const inspectCommand = Command.make("inspect", {
       const report = inspectNode(graph, target);
       if (report === undefined) {
         return yield* new SeoCliError({
-          message: `No node at "${target}". Run \`seo graph\` to list paths, or pass a URL with --live.`,
+          message: `No node at "${target}". Run \`gossamer graph\` to list paths, or pass a URL with --live.`,
         });
       }
       if (json) {
