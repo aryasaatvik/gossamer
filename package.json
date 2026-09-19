@@ -78,13 +78,18 @@
   "dependencies": {
     "@tanstack/router-generator": "^1.167.21"
   },
+  "overrides": {
+    "@effect/platform-bun": "4.0.0-rc.112",
+    "@effect/platform-node-shared": "4.0.0-rc.112",
+    "effect": "4.0.0-rc.112"
+  },
   "devDependencies": {
-    "@effect/platform-bun": "4.0.0-beta.102",
-    "@effect/vitest": "4.0.0-beta.102",
+    "@effect/platform-bun": "4.0.0-rc.112",
+    "@effect/vitest": "4.0.0-rc.112",
     "@tanstack/react-router": "^1.170.18",
     "@types/node": "^24.0.0",
     "@types/react": "19.2.18",
-    "effect": "4.0.0-beta.102",
+    "effect": "4.0.0-rc.112",
     "lighthouse": "13.4.1",
     "react": "19.2.8",
     "schema-dts": "^2.0.0",
@@ -95,9 +100,9 @@
     "vitest": "^4.1.10"
   },
   "peerDependencies": {
-    "@effect/platform-bun": ">=4.0.0-beta.0",
+    "@effect/platform-bun": "^4.0.0-rc.112",
     "@tanstack/react-router": "^1.170.0",
-    "effect": ">=4.0.0-beta.0",
+    "effect": "^4.0.0-rc.112",
     "lighthouse": ">=13.0.0",
     "react": "^19.0.0",
     "vite": "^8.0.0"
