@@ -44,14 +44,17 @@ interface CliResult {
   readonly stderr: string;
 }
 
-/** Spawn the CLI with the TypeSafe key removed so no test escapes to the network. */
+/**
+ * Spawn the CLI. By default the TypeSafe key is dropped so the offline tests can
+ * never escape to the network; the gated live suite opts back in with `withKey`.
+ */
 const runDecide = (
   args: ReadonlyArray<string>,
-  stdin?: string,
+  options: { readonly stdin?: string; readonly withKey?: boolean } = {},
 ): Promise<CliResult> =>
   new Promise((resolve, reject) => {
     const env = { ...process.env };
-    delete env.TYPESAFE_API_KEY;
+    if (options.withKey !== true) delete env.TYPESAFE_API_KEY;
     const child = spawn("bun", [cli, "links", "decide", ...args], { env });
     let stdout = "";
     let stderr = "";
@@ -63,8 +66,8 @@ const runDecide = (
       clearTimeout(timer);
       resolve({ status, stdout, stderr });
     });
-    if (stdin !== undefined) {
-      child.stdin.write(stdin);
+    if (options.stdin !== undefined) {
+      child.stdin.write(options.stdin);
       child.stdin.end();
     }
   });
@@ -79,7 +82,7 @@ describe("pagegraph links decide (offline)", () => {
   }, 20_000);
 
   it("reads candidates from stdin", async () => {
-    const result = await runDecide(["--json"], candidates);
+    const result = await runDecide(["--json"], { stdin: candidates });
 
     expect(result.status).toBe(1);
     expect(result.stdout).toBe("");
@@ -101,21 +104,32 @@ describe("pagegraph links decide (offline)", () => {
     expect(result.stderr).toContain("Invalid candidates");
   }, 20_000);
 
-  it("rejects a threshold outside (0, 1)", async () => {
-    const result = await runDecide([writeCandidates(candidates), "--threshold", "1.5"]);
+  it("rejects a threshold without a non-empty review band", async () => {
+    for (const value of ["0.5", "0.4", "0", "1", "1.5"]) {
+      const result = await runDecide([writeCandidates(candidates), "--threshold", value]);
+
+      expect(result.status).toBe(1);
+      expect(result.stdout).toBe("");
+      expect(result.stderr).toContain("--threshold must be greater than 0.5 and less than 1");
+    }
+  }, 20_000);
+
+  it("accepts a threshold inside (0.5, 1) and proceeds to the key check", async () => {
+    const result = await runDecide([writeCandidates(candidates), "--threshold", "0.6"]);
 
     expect(result.status).toBe(1);
-    expect(result.stderr).toContain("--threshold must be between 0 and 1");
+    expect(result.stderr).toContain("TYPESAFE_API_KEY is not set");
   }, 20_000);
 });
 
 /**
  * Live smoke: only meaningful with a real TypeSafe key. Skipped in CI and on any
  * host without `TYPESAFE_API_KEY`; the mock layer is the contract test above.
+ * The child keeps the key (unlike the offline suite) so the live path can run.
  */
 describe.skipIf(!process.env.TYPESAFE_API_KEY)("pagegraph links decide (live)", () => {
   it("answers the candidate set through TypeSafe System One", async () => {
-    const result = await runDecide([writeCandidates(candidates), "--json"]);
+    const result = await runDecide([writeCandidates(candidates), "--json"], { withKey: true });
 
     expect(result.status).toBe(0);
     expect(result.stderr).toBe("");

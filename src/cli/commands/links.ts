@@ -219,7 +219,7 @@ const decideFile = Argument.String("file").pipe(
   Argument.optional,
 );
 const thresholdFlag = Flag.Finite("threshold").pipe(
-  Flag.withDescription("Probability above which an answer is confident; below is review (0 < t < 1)"),
+  Flag.withDescription("Probability above which an answer is confident; below is review (0.5 < t < 1)"),
   Flag.withDefault(DEFAULT_LINK_THRESHOLD),
 );
 const modelFlag = Flag.String("model").pipe(
@@ -232,10 +232,12 @@ const concurrencyFlag = Flag.Int("concurrency").pipe(
 );
 
 const checkThreshold = (value: number): Effect.Effect<number, SeoCliError> =>
-  Number.isFinite(value) && value > 0 && value < 1
+  Number.isFinite(value) && value > 0.5 && value < 1
     ? Effect.succeed(value)
     : Effect.fail(
-        new SeoCliError({ message: "--threshold must be between 0 and 1 (exclusive)" }),
+        new SeoCliError({
+          message: "--threshold must be greater than 0.5 and less than 1 (a review band needs 1 - t < t)",
+        }),
       );
 
 /** Read the candidate JSON from a file argument or stdin; a TTY with no file is an error. */

@@ -63,7 +63,8 @@ const isConfident = (probability: number, threshold: number): boolean =>
 /**
  * Map the two probabilities to a verdict. A probability inside the review band
  * makes the whole candidate uncertain, so the confident half of the pair can
- * never auto-resolve it.
+ * never auto-resolve it. Requires `threshold > 0.5`, so the review band
+ * `(1 - threshold, threshold)` is non-empty.
  *
  * - `present` — descriptive anchor already in the copy; nothing to add.
  * - `recommend` — a real reason and no existing anchor; add a contextual link.
