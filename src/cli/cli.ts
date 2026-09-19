@@ -5,6 +5,7 @@ import { auditCommand } from "./commands/audit";
 import { diffCommand } from "./commands/diff";
 import { graphCommand } from "./commands/graph";
 import { inspectCommand } from "./commands/inspect";
+import { linksCommand } from "./commands/links";
 import { robotsCommand } from "./commands/robots";
 import { sitemapCommand } from "./commands/sitemap";
 
@@ -35,6 +36,7 @@ export const cli = Command.make("pagegraph").pipe(
     diffCommand,
     graphCommand,
     inspectCommand,
+    linksCommand,
     checkCommand,
     sitemapCommand,
     robotsCommand,

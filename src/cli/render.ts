@@ -9,6 +9,7 @@
 import type { Violation } from "../core/checks";
 import type { SeoGraph, SeoNode } from "../core/graph";
 import type { LiveHeadReport } from "../core/inspect-html";
+import type { SimpleEdge } from "../core/links";
 import type { NodeReport } from "../core/projections";
 
 /** Count of edges pointing *at* each node — 0 means nothing links to it. */
@@ -220,4 +221,84 @@ export const renderViolations = (violations: ReadonlyArray<Violation>): string =
       : `${editorial.length} editorial warning(s) — no structural violations.`,
   ];
   return parts.join("\n");
+};
+
+/** One page the crawl could not fetch. */
+export interface LinksCrawlFailure {
+  readonly url: string;
+  readonly error: string;
+}
+
+/**
+ * `pagegraph links verify` report: what a crawler actually receives, computed
+ * from the served HTML, plus the gap against the declared graph when the app
+ * has a `seo.config.ts`. This is the same object `--json` emits.
+ */
+export interface LinksVerifyReport {
+  readonly kind: "links-verify";
+  readonly schemaVersion: 1;
+  readonly origin: string;
+  readonly seed: string;
+  readonly crawl: {
+    readonly pages: number;
+    readonly limit: number;
+    readonly truncated: boolean;
+    readonly failures: ReadonlyArray<LinksCrawlFailure>;
+  };
+  readonly rendered: {
+    readonly pages: number;
+    readonly internalEdges: number;
+    readonly contextualEdges: number;
+    readonly maxDepth: number | null;
+    readonly orphans: ReadonlyArray<string>;
+  };
+  readonly declared: {
+    readonly edges: number;
+    readonly contextualEdges: number;
+    readonly declaredNotRendered: ReadonlyArray<SimpleEdge>;
+    readonly renderedNotDeclared: ReadonlyArray<SimpleEdge>;
+  } | null;
+}
+
+const edgeLine = (edge: SimpleEdge): string => `    ${edge.from} → ${edge.to}`;
+
+/** Human `links verify` report: depth, orphans, and the declared-vs-rendered gap. */
+export const renderLinksReport = (report: LinksVerifyReport): string => {
+  const { crawl, rendered } = report;
+  const coverage = `${crawl.pages} page(s) crawled${
+    crawl.truncated ? ` of ${crawl.limit}, truncated` : ""
+  }`;
+  const lines: Array<string> = [
+    `${report.seed}  (${coverage})`,
+    "",
+    `  max homepage depth  ${rendered.maxDepth ?? "—"}`,
+    `  rendered orphans    ${rendered.orphans.length}`,
+    `  internal edges      ${rendered.internalEdges}`,
+    `  contextual edges    ${rendered.contextualEdges}`,
+  ];
+
+  if (rendered.orphans.length > 0) {
+    lines.push("", "Orphans (no incoming internal edge):");
+    for (const path of rendered.orphans) lines.push(`  ${path}`);
+  }
+
+  if (report.declared === null) {
+    lines.push("", "No seo.config.ts declared graph — rendered-only report.");
+  } else {
+    lines.push(
+      "",
+      `Declared vs rendered (${report.declared.edges} declared related edge(s)):`,
+      `  declared not rendered  ${report.declared.declaredNotRendered.length}`,
+    );
+    for (const edge of report.declared.declaredNotRendered) lines.push(edgeLine(edge));
+    lines.push(`  rendered not declared  ${report.declared.renderedNotDeclared.length}`);
+    for (const edge of report.declared.renderedNotDeclared) lines.push(edgeLine(edge));
+  }
+
+  if (crawl.failures.length > 0) {
+    lines.push("", `${crawl.failures.length} page(s) could not be fetched:`);
+    for (const failure of crawl.failures) lines.push(`  ${failure.url}  ${failure.error}`);
+  }
+
+  return lines.join("\n");
 };
