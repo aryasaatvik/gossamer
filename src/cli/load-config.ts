@@ -59,6 +59,25 @@ const isSeoCliConfig = (value: unknown): value is SeoCliConfig =>
   (value["directives"] === undefined || isStringArray(value["directives"])) &&
   (value["transform"] === undefined || Predicate.isFunction(value["transform"]));
 
+/** Import and validate one config path. */
+const loadConfigFile = (configPath: string): Effect.Effect<SeoCliConfig, SeoCliError> =>
+  Effect.gen(function* () {
+    yield* Effect.logDebug(`Loading SEO config from ${configPath}`);
+
+    const module = yield* Effect.tryPromise({
+      try: () => import(pathToFileURL(configPath).href) as Promise<{ default?: unknown }>,
+      catch: (cause) =>
+        new SeoCliError({ message: `Could not load ${configPath}: ${messageOf(cause)}` }),
+    });
+
+    if (!isSeoCliConfig(module.default)) {
+      return yield* new SeoCliError({
+        message: `${configPath} must default-export defineSeoConfig({ origin, disallow, loadGraph }).`,
+      });
+    }
+    return module.default;
+  });
+
 /**
  * Load the app's `seo.config.ts`. Cheap to run more than once per process: the
  * ESM cache evaluates the config module exactly once.
@@ -71,22 +90,21 @@ export const loadSeoConfig: Effect.Effect<SeoCliConfig, SeoCliError> = Effect.ge
       message: `No ${CONFIG_FILENAMES[0]} in ${cwd} or any parent directory. Create one that exports \`defineSeoConfig({ origin, disallow, loadGraph })\` from "pagegraph/config".`,
     });
   }
-
-  yield* Effect.logDebug(`Loading SEO config from ${configPath}`);
-
-  const module = yield* Effect.tryPromise({
-    try: () => import(pathToFileURL(configPath).href) as Promise<{ default?: unknown }>,
-    catch: (cause) =>
-      new SeoCliError({ message: `Could not load ${configPath}: ${messageOf(cause)}` }),
-  });
-
-  if (!isSeoCliConfig(module.default)) {
-    return yield* new SeoCliError({
-      message: `${configPath} must default-export defineSeoConfig({ origin, disallow, loadGraph }).`,
-    });
-  }
-  return module.default;
+  return yield* loadConfigFile(configPath);
 });
+
+/**
+ * Like {@link loadSeoConfig}, but `undefined` when no config exists. For a
+ * framework-independent command that enriches its report when an app is present
+ * without requiring one. A config that exists but fails to load still fails —
+ * silence would hide a broken declaration.
+ */
+export const loadSeoConfigOptional: Effect.Effect<SeoCliConfig | undefined, SeoCliError> =
+  Effect.gen(function* () {
+    const configPath = findConfigFile(process.cwd());
+    if (configPath === undefined) return undefined;
+    return yield* loadConfigFile(configPath);
+  });
 
 /**
  * The live SEO graph as a scoped resource: whatever the loader acquired (for

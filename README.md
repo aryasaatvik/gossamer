@@ -298,11 +298,26 @@ pagegraph check                 # CI gate — exit 1 on structural violations
 pagegraph graph                 # the graph as a tree · --format mermaid | json
 pagegraph inspect /pricing      # one node: policy, sitemap status, in/out edges
 pagegraph inspect <url> --live  # fetch a deployed page, validate its rendered <head>
+pagegraph links verify <url>    # crawl served HTML: depth, orphans, declared-vs-rendered
 pagegraph sitemap               # print sitemap.xml
 pagegraph robots                # print robots.txt
 ```
 
 Stdout is data, stderr is status — `pagegraph check --json | jq` just works.
+
+### Verify the rendered link graph
+
+`pagegraph links verify` crawls a site's served HTML — through the same DNS-pinned,
+private-IP-blocked HTTP path as `pagegraph audit` — and reports what a crawler
+actually receives: the real homepage depth, the pages with no incoming internal
+edge (rendered orphans), and, when the app has a `seo.config.ts`, the
+declared-vs-rendered link diff. It is bounded with `--limit` and needs no
+framework or config:
+
+```bash
+pagegraph links verify https://example.com
+pagegraph links verify https://example.com --limit 25 --json | jq
+```
 
 ### Audit any website
 
