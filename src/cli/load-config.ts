@@ -19,6 +19,7 @@ import * as Predicate from "effect/Predicate";
 import type * as Scope from "effect/Scope";
 
 import type { SeoCliConfig } from "../config";
+import type { CoverageRule } from "../core/checks";
 import type { SeoGraph } from "../core/graph";
 import { SeoCliError } from "./output";
 
@@ -44,6 +45,16 @@ const findConfigFile = (from: string): string | undefined => {
 const isStringArray = (value: unknown): value is ReadonlyArray<string> =>
   Array.isArray(value) && value.every(Predicate.isString);
 
+const isCoverageRules = (value: unknown): value is ReadonlyArray<CoverageRule> =>
+  Array.isArray(value) &&
+  value.every(
+    (rule) =>
+      Predicate.isObject(rule) &&
+      Predicate.isString(rule["path"]) &&
+      Number.isSafeInteger(rule["minInbound"]) &&
+      (rule["minInbound"] as number) > 0,
+  );
+
 /**
  * `seo.config.ts` is the consumer's file and may be plain JS, so its types are
  * a suggestion, not a guarantee. Check every field the commands actually read —
@@ -57,7 +68,8 @@ const isSeoCliConfig = (value: unknown): value is SeoCliConfig =>
   isStringArray(value["disallow"]) &&
   (value["contentSignal"] === undefined || Predicate.isString(value["contentSignal"])) &&
   (value["directives"] === undefined || isStringArray(value["directives"])) &&
-  (value["transform"] === undefined || Predicate.isFunction(value["transform"]));
+  (value["transform"] === undefined || Predicate.isFunction(value["transform"])) &&
+  (value["coverage"] === undefined || isCoverageRules(value["coverage"]));
 
 /** Import and validate one config path. */
 const loadConfigFile = (configPath: string): Effect.Effect<SeoCliConfig, SeoCliError> =>

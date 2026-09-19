@@ -27,6 +27,7 @@
 export type { LoadedSeoGraph, SeoGraphLoader, ViteGraphLoaderOptions } from "./vite-graph-loader";
 export { viteGraphLoader } from "./vite-graph-loader";
 
+import type { CoverageRule } from "../core/checks";
 import type { SeoGraphLoader } from "./vite-graph-loader";
 
 export interface SeoCliConfig {
@@ -54,6 +55,12 @@ export interface SeoCliConfig {
    * Runs for indexable and preview hosts.
    */
   readonly transform?: ((robots: string) => string) | undefined;
+  /**
+   * Contextual-link coverage policy for `pagegraph check`: every sitemap-eligible
+   * page matching a rule's `path` glob needs at least `minInbound` incoming
+   * `related` edges. A `--require-inbound` flag overrides this per invocation.
+   */
+  readonly coverage?: ReadonlyArray<CoverageRule> | undefined;
   /** How the CLI gets the graph. {@link viteGraphLoader} covers the Vite-app case. */
   readonly loadGraph: SeoGraphLoader;
 }
