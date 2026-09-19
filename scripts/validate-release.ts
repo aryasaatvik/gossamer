@@ -266,6 +266,7 @@ try {
       "--ignore-scripts",
       `effect@${manifest.devDependencies.effect}`,
       `@effect/platform-bun@${manifest.devDependencies["@effect/platform-bun"]}`,
+      `@effect/platform-node-shared@${manifest.devDependencies["@effect/platform-bun"]}`,
       `react@${manifest.devDependencies.react}`,
       `vite@${manifest.devDependencies.vite}`,
     ],
@@ -285,11 +286,11 @@ try {
   }
 
   const help = await runSuccessfully([executable, "--help"], installDirectory);
-  if (!help.includes("seo <subcommand>") || !help.includes("audit") || !help.includes("diff") || !help.includes("check") || !help.includes("sitemap")) {
+  if (!help.includes("gossamer <subcommand>") || !help.includes("audit") || !help.includes("diff") || !help.includes("check") || !help.includes("sitemap")) {
     throw new Error("Packed gossamer bin did not print the expected command tree");
   }
   const version = await runSuccessfully([executable, "--version"], installDirectory);
-  const expectedVersion = `seo v${manifest.version}`;
+  const expectedVersion = `gossamer v${manifest.version}`;
   if (version.trim() !== expectedVersion) {
     throw new Error(`Packed gossamer bin reported ${version.trim()}, expected ${expectedVersion}`);
   }

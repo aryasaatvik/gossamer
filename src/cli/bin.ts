@@ -40,7 +40,7 @@ const main = await import("./main").catch((cause: unknown) => {
     throw cause;
   }
   process.stderr.write(
-    `✗ The \`seo\` CLI could not load its runtime dependencies.\n\n` +
+    `✗ The \`gossamer\` CLI could not load its runtime dependencies.\n\n` +
       `  Effect is an optional peer dependency of gossamer — only the CLI needs it.\n` +
       `  Install it where the CLI runs:\n\n` +
       `      bun add -D effect @effect/platform-bun\n\n` +
