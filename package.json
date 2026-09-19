@@ -79,6 +79,7 @@
     "@tanstack/router-generator": "^1.167.21"
   },
   "devDependencies": {
+    "@effect/ai-typesafe": "4.0.0-rc.116",
     "@effect/platform-bun": "4.0.0-rc.116",
     "@effect/platform-node-shared": "4.0.0-rc.116",
     "@effect/vitest": "4.0.0-rc.116",
@@ -96,6 +97,7 @@
     "vitest": "^5.0.0"
   },
   "peerDependencies": {
+    "@effect/ai-typesafe": "^4.0.0-rc.116",
     "@effect/platform-bun": "^4.0.0-rc.116",
     "@tanstack/react-router": "^1.170.0",
     "effect": "^4.0.0-rc.116",
@@ -104,6 +106,9 @@
     "vite": "^8.0.0"
   },
   "peerDependenciesMeta": {
+    "@effect/ai-typesafe": {
+      "optional": true
+    },
     "@effect/platform-bun": {
       "optional": true
     },
