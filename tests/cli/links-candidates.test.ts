@@ -158,6 +158,26 @@ describe("pagegraph links candidates", () => {
     );
   });
 
+  it("matches rendered anchors whose URLs carry a query or hash", () => {
+    const directory = configDirectory(CONFIG);
+    const renderedFile = join(directory, "rendered.json");
+    writeFileSync(
+      renderedFile,
+      JSON.stringify([{ from: "/blog/a?ref=nav", to: "/blog/c#details" }]),
+    );
+
+    const report = JSON.parse(
+      run(["--rendered", renderedFile, "--json"], directory).stdout,
+    ) as Report;
+    expect(report.total).toBe(4);
+    expect(report.candidates.map((c) => `${c.source}→${c.destination}`)).not.toContain(
+      "/blog/a→/blog/c",
+    );
+    expect(report.candidates.map((c) => `${c.source}→${c.destination}`)).not.toContain(
+      "/blog/c→/blog/a",
+    );
+  });
+
   it("renders the human plan with clusters and reasons", () => {
     const directory = configDirectory(CONFIG);
     const result = run([], directory);

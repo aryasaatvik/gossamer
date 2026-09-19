@@ -78,6 +78,35 @@ describe("generateLinkCandidates", () => {
     expect(pairs(graph)).toEqual([]);
   });
 
+  it("does not group nested pages from different sections by kind", () => {
+    const graph = graphOf([
+      instanceNode("/blog/a"),
+      instanceNode("/docs/b"),
+      instanceNode("/blog/c"),
+    ]);
+    // /blog/a and /blog/c share the "/blog" section; /docs/b shares only a kind.
+    expect(pairs(graph)).toEqual([
+      "/blog/a→/blog/c",
+      "/blog/c→/blog/a",
+    ]);
+    expect(generateLinkCandidates(graph).clusters).toEqual([{ key: "blog", candidates: 2 }]);
+  });
+
+  it("keeps the kind fallback local to root-level pages", () => {
+    const graph = graphOf([
+      routeNode("/", { kind: "page", sitemap: { ...SITEMAP } }),
+      routeNode("/pricing", { kind: "page", sitemap: { ...SITEMAP } }),
+      routeNode("/blog", { kind: "page", sitemap: { ...SITEMAP } }),
+      instanceNode("/blog/a"),
+    ]);
+    // Section-first still pairs a section root with its nested page...
+    expect(pairs(graph)).toContain("/blog→/blog/a");
+    // ...and the root-level pages cluster together by kind...
+    expect(pairs(graph)).toContain("/pricing→/blog");
+    // ...but a root-level page never joins a nested section by kind.
+    expect(pairs(graph)).not.toContain("/pricing→/blog/a");
+  });
+
   it("excludes pairs already declared as a related edge, in either direction", () => {
     const graph = graphOf(
       [instanceNode("/blog/a"), instanceNode("/blog/b")],
@@ -89,6 +118,21 @@ describe("generateLinkCandidates", () => {
   it("excludes pairs already rendered as an anchor when rendered edges are supplied", () => {
     const graph = graphOf([instanceNode("/blog/a"), instanceNode("/blog/b")]);
     expect(pairs(graph, { renderedEdges: [{ from: "/blog/b", to: "/blog/a" }] })).toEqual([]);
+  });
+
+  it("normalizes queries and hashes on rendered edges before excluding", () => {
+    const graph = graphOf([instanceNode("/blog/a"), instanceNode("/blog/b")]);
+    expect(
+      pairs(graph, { renderedEdges: [{ from: "/blog/a?ref=nav", to: "/blog/b#details" }] }),
+    ).toEqual([]);
+  });
+
+  it("normalizes queries and hashes on declared edges before excluding", () => {
+    const graph = graphOf(
+      [instanceNode("/blog/a"), instanceNode("/blog/b")],
+      [{ from: "/blog/a/?ref=nav", to: "/blog/b#details", type: "related" }],
+    );
+    expect(pairs(graph)).toEqual([]);
   });
 
   it("does not treat a breadcrumb edge as an existing contextual connection", () => {
@@ -161,6 +205,11 @@ describe("generateLinkCandidates", () => {
 describe("undirectedEdgeKey", () => {
   it("normalizes trailing slashes and ignores direction", () => {
     expect(undirectedEdgeKey("/a/", "/b")).toBe(undirectedEdgeKey("/b", "/a"));
+  });
+
+  it("normalizes queries and hashes to the graph's path key", () => {
+    expect(undirectedEdgeKey("/a?ref=nav", "/b#details")).toBe(undirectedEdgeKey("/a", "/b"));
+    expect(undirectedEdgeKey("/", "/b/?x=1")).toBe(undirectedEdgeKey("/b", "/"));
   });
 });
 

@@ -50,9 +50,15 @@ export interface LinkCandidateResult {
   readonly clusters: ReadonlyArray<LinkClusterSummary>;
 }
 
-/** Canonical path key: trailing slashes stripped, "/" preserved. */
+/**
+ * Canonical path key: query and hash stripped, trailing slashes removed, "/"
+ * preserved. This is the same path key the graph and the rendered-link core
+ * use, so a served anchor like `/blog/a?ref=nav` still matches the graph pair
+ * `/blog/a`.
+ */
 const normalize = (path: string): string => {
-  const trimmed = path.replace(/\/+$/, "");
+  const pathname = path.split(/[?#]/, 1)[0] ?? "";
+  const trimmed = pathname.replace(/\/+$/, "");
   return trimmed === "" ? "/" : trimmed;
 };
 
@@ -64,19 +70,25 @@ export const undirectedEdgeKey = (from: string, to: string): string => {
 
 /** First path segment, or undefined for the root page. */
 const topSegment = (path: string): string | undefined => {
-  if (path === "/") return undefined;
   const segment = path.split("/").filter(Boolean)[0];
   return segment === undefined || segment === "" ? undefined : segment;
 };
 
-/** The cluster a pair shares, or undefined when they share none. */
+/** A page with no nested segment (`/`, `/pricing`, `/blog`) is root-level. */
+const isRootLevel = (path: string): boolean => path.split("/").filter(Boolean).length <= 1;
+
+/**
+ * The cluster a pair shares, or undefined when they share none. Section-first:
+ * a shared top-level section wins. The kind fallback is local to root-level
+ * pages, so it never pairs two nested pages from different sections.
+ */
 const clusterOf = (a: SeoNode, b: SeoNode): { key: string; reason: string } | undefined => {
   const aSegment = topSegment(a.path);
   const bSegment = topSegment(b.path);
   if (aSegment !== undefined && aSegment === bSegment) {
     return { key: aSegment, reason: `same top-level section "/${aSegment}"` };
   }
-  if (a.kind === b.kind) {
+  if (isRootLevel(a.path) && isRootLevel(b.path) && a.kind === b.kind) {
     return { key: `kind:${a.kind}`, reason: `same kind "${a.kind}"` };
   }
   return undefined;
