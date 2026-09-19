@@ -32,8 +32,12 @@ export interface CrawlOptions {
 export interface CrawlResult {
   readonly origin: string;
   readonly seed: string;
+  /** Normalized final path of the seed page — the depth BFS root, even after a redirect. */
+  readonly root: string;
   readonly pages: ReadonlyArray<RenderedPage>;
   readonly failures: ReadonlyArray<CrawlFailure>;
+  /** URLs whose captured body hit `maxBodyBytes`; anchors past the cutoff are missing. */
+  readonly truncatedBodies: ReadonlyArray<string>;
   /** True when discovery outran `limit` and pages were left unvisited. */
   readonly truncated: boolean;
   readonly limit: number;
@@ -56,6 +60,8 @@ interface ProbedPage {
   readonly page: RenderedPage | null;
   readonly failure: CrawlFailure | null;
   readonly links: ReadonlyArray<URL>;
+  /** Whether the captured body was cut at `maxBodyBytes`. */
+  readonly bodyTruncated: boolean;
 }
 
 /** Run `run` over `items` with at most `limit` in flight, preserving order. */
@@ -112,10 +118,14 @@ export const crawlRenderedPages = async (
   const concurrency = Math.max(1, options.concurrency ?? 4);
 
   const visited = new Set<string>([pageKey(seedUrl)]);
+  /** Final paths already rendered, so a redirect cannot add the same page twice. */
+  const rendered = new Set<string>();
   const pages: Array<RenderedPage> = [];
   const failures: Array<CrawlFailure> = [];
+  const truncatedBodies: Array<string> = [];
   let attempts = 0;
   let truncated = false;
+  let root = pageKey(seedUrl);
   let frontier: Array<QueueItem> = [{ url: seedUrl, depth: 0 }];
 
   const probePage = async (item: QueueItem): Promise<ProbedPage> => {
@@ -135,6 +145,7 @@ export const crawlRenderedPages = async (
           error: probe.error ?? `HTTP ${probe.status ?? "no response"}`,
         },
         links: [],
+        bodyTruncated: false,
       };
     }
     const finalUrl = new URL(probe.finalUrl);
@@ -144,6 +155,7 @@ export const crawlRenderedPages = async (
         page: null,
         failure: { url: item.url.href, error: `Redirected off-origin to ${probe.finalUrl}` },
         links: [],
+        bodyTruncated: false,
       };
     }
     const anchors: ReadonlyArray<Anchor> = probe.anchors ?? [];
@@ -159,7 +171,13 @@ export const crawlRenderedPages = async (
       if (NON_PAGE.test(target.pathname)) return [];
       return [target];
     });
-    return { item, page: { url: probe.finalUrl, anchors }, failure: null, links };
+    return {
+      item,
+      page: { url: probe.finalUrl, anchors },
+      failure: null,
+      links,
+      bodyTruncated: probe.bodyTruncated,
+    };
   };
 
   while (frontier.length > 0) {
@@ -176,9 +194,17 @@ export const crawlRenderedPages = async (
     const probed = await mapLimit(batch, concurrency, probePage);
     const discovered: Array<QueueItem> = [];
     for (const result of probed) {
-      if (result.page !== null) pages.push(result.page);
       if (result.failure !== null) failures.push(result.failure);
       if (result.page === null) continue;
+      const finalKey = pageKey(new URL(result.page.url));
+      // The seed's final path is the BFS root, even when the homepage redirected.
+      if (result.item.depth === 0) root = finalKey;
+      // A redirect can land on a page another request already rendered; keep one.
+      if (rendered.has(finalKey)) continue;
+      rendered.add(finalKey);
+      visited.add(finalKey);
+      pages.push(result.page);
+      if (result.bodyTruncated) truncatedBodies.push(result.page.url);
       for (const link of result.links) {
         const key = pageKey(link);
         if (visited.has(key)) continue;
@@ -189,5 +215,14 @@ export const crawlRenderedPages = async (
     frontier = discovered;
   }
 
-  return { origin, seed: seedUrl.href, pages, failures, truncated, limit: options.limit };
+  return {
+    origin,
+    seed: seedUrl.href,
+    root,
+    pages,
+    failures,
+    truncatedBodies,
+    truncated,
+    limit: options.limit,
+  };
 };
