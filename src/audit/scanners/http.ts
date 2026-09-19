@@ -8,6 +8,7 @@ import { checkServerIdentity } from "node:tls";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 
+import { extractAnchors } from "../../core/links";
 import type {
   DocumentSignals,
   HttpProbe,
@@ -329,6 +330,10 @@ export const probeHttp = async (
         ? response.headers["content-type"]
         : "";
     const body = new TextDecoder().decode(bounded.bytes);
+    const anchors =
+      options.captureAnchors === true && contentType.includes("text/html")
+        ? extractAnchors(body, currentUrl.href)
+        : undefined;
     return {
       kind: request.kind,
       method: request.method,
@@ -358,6 +363,7 @@ export const probeHttp = async (
         body.length === 0
           ? null
           : extractDocumentSignals(body, contentType, currentUrl),
+      anchors,
       error: null,
     };
   } catch (error) {

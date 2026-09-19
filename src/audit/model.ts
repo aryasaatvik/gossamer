@@ -1,5 +1,7 @@
 import { Schema } from "effect";
 
+import type { Anchor } from "../core/links";
+
 /** A stable identifier for a scanner, such as `http` or `lighthouse`. */
 export type ScannerId = string;
 
@@ -94,6 +96,11 @@ export interface ProbeOptions {
   readonly timeoutMs: number;
   readonly maxBodyBytes: number;
   readonly allowPrivate: boolean;
+  /**
+   * Capture resolved anchors from HTML bodies. Opt-in because it is the only
+   * probe field that grows with document size; the audit report leaves it unset.
+   */
+  readonly captureAnchors?: boolean | undefined;
 }
 
 export interface DocumentSignals {
@@ -126,6 +133,8 @@ export interface HttpProbe {
   readonly bodyTruncated: boolean;
   readonly bodyExcerpt: string | null;
   readonly document: DocumentSignals | null;
+  /** Resolved anchors from the served HTML; set only when `captureAnchors` is on. */
+  readonly anchors?: ReadonlyArray<Anchor> | undefined;
   readonly error: string | null;
 }
 
