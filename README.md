@@ -37,9 +37,10 @@ bun add -D lighthouse   # only for `pagegraph audit` performance evidence
 The core and React entries have **zero runtime dependencies** — everything above is a
 peer, and only the entries you import need theirs installed.
 
-The CLI is **self-contained**: it bundles Effect and the TypeSafe provider, needs no Effect peers,
-and runs on [Bun](https://bun.sh) (`bunx pagegraph`). It is independent of the Effect RC your app
-uses. The `pagegraph/audit` entry, imported programmatically, still needs `effect`.
+The CLI **bundles Effect and the TypeSafe provider**, so it needs no Effect peers and does not
+depend on the app's Effect RC; it runs on [Bun](https://bun.sh) (`bunx pagegraph`). `vite` stays a
+peer — the graph commands load your app through Vite at runtime — and `lighthouse` is only needed by
+`pagegraph audit`. Importing `pagegraph/audit` programmatically still needs `effect`.
 
 ## Quick start
 
