@@ -12,7 +12,7 @@ export interface ScannerRegistryShape {
  * not on a concrete list of scanner implementations. */
 export namespace ScannerRegistry {
   export class Service extends Context.Service<Service, ScannerRegistryShape>()(
-    "tanstack-plugin-seo/ScannerRegistry",
+    "gossamer/ScannerRegistry",
   ) {}
 }
 

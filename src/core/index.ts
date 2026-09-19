@@ -1,5 +1,5 @@
 /**
- * `tanstack-plugin-seo` — declare SEO once on the route; the sitemap, robots.txt, the
+ * `gossamer` — declare SEO once on the route; the sitemap, robots.txt, the
  * cross-link graph and the check engine all derive from that declaration.
  *
  * This entry is the pure core: zero runtime dependencies, no React, no I/O.

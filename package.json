@@ -1,29 +1,33 @@
 {
-  "name": "tanstack-plugin-seo",
+  "name": "gossamer",
   "version": "0.5.0",
-  "description": "SEO tooling for any website, with route-declared SEO and first-class TanStack Router support.",
+  "description": "Route-declared SEO graph and audit toolkit for TanStack Start: sitemap/robots, React head, JSON-LD, Vite coverage gate, live audit, and Jev-backed link decisions.",
   "keywords": [
     "seo",
     "tanstack",
+    "tanstack-start",
     "tanstack-router",
     "sitemap",
     "robots",
     "json-ld",
-    "lighthouse",
+    "internal-links",
+    "link-graph",
     "audit",
-    "vite"
+    "lighthouse",
+    "vite",
+    "jev"
   ],
-  "homepage": "https://github.com/aryasaatvik/tanstack-plugin-seo#readme",
+  "homepage": "https://github.com/aryasaatvik/gossamer#readme",
   "bugs": {
-    "url": "https://github.com/aryasaatvik/tanstack-plugin-seo/issues"
+    "url": "https://github.com/aryasaatvik/gossamer/issues"
   },
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/aryasaatvik/tanstack-plugin-seo.git"
+    "url": "git+https://github.com/aryasaatvik/gossamer.git"
   },
   "bin": {
-    "seo": "./dist/cli.js"
+    "gossamer": "./dist/cli.js"
   },
   "files": [
     "dist",

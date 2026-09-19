@@ -91,7 +91,7 @@ const AuditDiffSource = Schema.Struct({
   targets: Schema.Array(Schema.String),
 });
 
-/** Versioned machine-readable contract emitted by `seo diff --json`. */
+/** Versioned machine-readable contract emitted by `gossamer diff --json`. */
 export const AuditDiff = Schema.Struct({
   kind: Schema.Literal("audit-diff"),
   schemaVersion: Schema.Literal(1),

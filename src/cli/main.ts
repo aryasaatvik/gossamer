@@ -1,5 +1,5 @@
 /**
- * The `seo` CLI program (Bun runtime), wiring the three output planes:
+ * The `gossamer` CLI program (Bun runtime), wiring the three output planes:
  *  - **data** → stdout, via `Console.log` in the command handlers.
  *  - **status** → stderr, via `Logger.LogToStderr(true)`: the built-in loggers
  *    call `console.error`, so `Effect.log*` never touches stdout. The built-in
@@ -8,7 +8,7 @@
  *
  * This module is what `bin.ts` dynamic-imports, and it is the only place Effect
  * enters the package — which is what keeps Effect an *optional* peer dependency
- * that no consumer of `tanstack-plugin-seo` or `tanstack-plugin-seo/react` ever installs.
+ * that no consumer of `gossamer` or `gossamer/react` ever installs.
  *
  * Two Bun-specific wrinkles are handled here:
  *  - `Command.run` writes its help to stdout, so a flag typo would dump the full

@@ -51,11 +51,11 @@ type AuditFixtureReport = {
 };
 
 const root = path.resolve(import.meta.dir, "..");
-const temporary = await mkdtemp(path.join(tmpdir(), "tanstack-plugin-seo-release-"));
+const temporary = await mkdtemp(path.join(tmpdir(), "gossamer-release-"));
 const packDirectory = path.join(temporary, "pack");
 const installDirectory = path.join(temporary, "consumer");
-const packageName = "tanstack-plugin-seo";
-const repositoryUrl = "git+https://github.com/aryasaatvik/tanstack-plugin-seo.git";
+const packageName = "gossamer";
+const repositoryUrl = "git+https://github.com/aryasaatvik/gossamer.git";
 
 const run = async (
   command: ReadonlyArray<string>,
@@ -109,10 +109,10 @@ const assertPackageIdentity = (manifest: PackageManifest): void => {
   if (manifest.repository.type !== "git" || manifest.repository.url !== repositoryUrl) {
     throw new Error(`Package repository must be ${repositoryUrl}`);
   }
-  if (manifest.homepage !== "https://github.com/aryasaatvik/tanstack-plugin-seo#readme") {
+  if (manifest.homepage !== "https://github.com/aryasaatvik/gossamer#readme") {
     throw new Error("Package homepage must point to the owned repository");
   }
-  if (manifest.bugs.url !== "https://github.com/aryasaatvik/tanstack-plugin-seo/issues") {
+  if (manifest.bugs.url !== "https://github.com/aryasaatvik/gossamer/issues") {
     throw new Error("Package bugs URL must point to the owned repository");
   }
   if (
@@ -121,8 +121,8 @@ const assertPackageIdentity = (manifest: PackageManifest): void => {
   ) {
     throw new Error("Package publish configuration must target the public npm registry");
   }
-  if (JSON.stringify(manifest.bin) !== JSON.stringify({ seo: "./dist/cli.js" })) {
-    throw new Error("Package must expose only the seo bin from dist/cli.js");
+  if (JSON.stringify(manifest.bin) !== JSON.stringify({ gossamer: "./dist/cli.js" })) {
+    throw new Error("Package must expose only the gossamer bin from dist/cli.js");
   }
 
   const expectedExports = {
@@ -249,13 +249,13 @@ try {
   );
   if (!coreSmoke.includes("core exports ok")) throw new Error("Core export smoke test failed");
 
-  const executable = path.join(installDirectory, "node_modules", ".bin", "seo");
+  const executable = path.join(installDirectory, "node_modules", ".bin", "gossamer");
   const missingPeers = await run([executable, "--help"], installDirectory);
   if (
     missingPeers.exitCode !== 1 ||
     !missingPeers.stderr.includes("Effect is an optional peer dependency")
   ) {
-    throw new Error("Packed seo bin did not explain its missing optional Effect peers");
+    throw new Error("Packed gossamer bin did not explain its missing optional Effect peers");
   }
 
   await runSuccessfully(
@@ -286,12 +286,12 @@ try {
 
   const help = await runSuccessfully([executable, "--help"], installDirectory);
   if (!help.includes("seo <subcommand>") || !help.includes("audit") || !help.includes("diff") || !help.includes("check") || !help.includes("sitemap")) {
-    throw new Error("Packed seo bin did not print the expected command tree");
+    throw new Error("Packed gossamer bin did not print the expected command tree");
   }
   const version = await runSuccessfully([executable, "--version"], installDirectory);
   const expectedVersion = `seo v${manifest.version}`;
   if (version.trim() !== expectedVersion) {
-    throw new Error(`Packed seo bin reported ${version.trim()}, expected ${expectedVersion}`);
+    throw new Error(`Packed gossamer bin reported ${version.trim()}, expected ${expectedVersion}`);
   }
 
   await Bun.write(
@@ -301,7 +301,7 @@ try {
   const checkOutput = await runSuccessfully([executable, "check", "--json"], installDirectory);
   const check = JSON.parse(checkOutput) as { readonly ok?: unknown; readonly structural?: unknown };
   if (check.ok !== true || check.structural !== 0) {
-    throw new Error("Packed seo check did not validate the representative consumer config");
+    throw new Error("Packed gossamer check did not validate the representative consumer config");
   }
 
   const fixture = Bun.serve({
@@ -327,7 +327,7 @@ try {
     );
     const audit = JSON.parse(auditOutput) as AuditFixtureReport;
     if (audit.schemaVersion !== 1 || audit.findings.length !== 0) {
-      throw new Error("Packed seo audit did not return the expected clean report");
+      throw new Error("Packed gossamer audit did not return the expected clean report");
     }
 
     const beforePath = path.join(installDirectory, "audit-before.json");
@@ -345,7 +345,7 @@ try {
       readonly outcome?: unknown;
     };
     if (unchanged.kind !== "audit-diff" || unchanged.outcome !== "unchanged") {
-      throw new Error("Packed seo diff did not ignore timestamp volatility");
+      throw new Error("Packed gossamer diff did not ignore timestamp volatility");
     }
 
     const regression = structuredClone(after);
@@ -369,13 +369,13 @@ try {
       installDirectory,
     );
     if (regressed.exitCode !== 1 || !regressed.stderr.includes("1 structural")) {
-      throw new Error("Packed seo diff did not fail on a structural regression");
+      throw new Error("Packed gossamer diff did not fail on a structural regression");
     }
     const regressedOutput = JSON.parse(regressed.stdout) as {
       readonly outcome?: unknown;
     };
     if (regressedOutput.outcome !== "regressed") {
-      throw new Error("Packed seo diff did not preserve JSON output on regression");
+      throw new Error("Packed gossamer diff did not preserve JSON output on regression");
     }
   } finally {
     await fixture.stop(true);
