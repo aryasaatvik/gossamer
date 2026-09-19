@@ -1,10 +1,11 @@
 import { describe, expect, it } from "@effect/vitest";
 import type { AnyRouteMatch } from "@tanstack/react-router";
 
-import { orphanPaths, renderTree, renderViolations } from "../../src/cli/render";
+import { orphanPaths, renderLinksDecideReport, renderTree, renderViolations } from "../../src/cli/render";
 import { serializeGraph } from "../../src/cli/serialize";
 import type { Violation } from "../../src/core/checks";
 import type { SeoGraph, SeoNode } from "../../src/core/graph";
+import type { LinksDecideReport } from "../../src/links/decide";
 
 const graphOf = (nodes: Array<SeoNode>, edges: SeoGraph["edges"] = []): SeoGraph => ({
   nodes: new Map(nodes.map((node) => [node.path, node])),
@@ -103,5 +104,57 @@ describe("renderTree", () => {
     expect(output).toContain("/pricing  ·  page  sitemap:0.9");
     expect(output).toContain("2 nodes");
     expect(output).toContain("1 edges");
+  });
+});
+
+describe("renderLinksDecideReport", () => {
+  const report: LinksDecideReport = {
+    kind: "links-decide",
+    schemaVersion: 1,
+    model: "jev-latest",
+    threshold: 0.7,
+    counts: { candidates: 2, recommend: 1, present: 0, skip: 0, review: 1 },
+    resolved: [
+      {
+        sourceUrl: "/blog/post",
+        destinationUrl: "/pricing",
+        sourceText: "See how pricing scales.",
+        existingAnchor: null,
+        realReason: 0.93,
+        anchorPresent: 0.06,
+        verdict: "recommend",
+      },
+    ],
+    review: [
+      {
+        sourceUrl: "/docs/start",
+        destinationUrl: "/guides",
+        sourceText: "A passing mention.",
+        existingAnchor: null,
+        realReason: 0.58,
+        anchorPresent: 0.44,
+        verdict: "review",
+      },
+    ],
+  };
+
+  it("groups resolved verdicts and surfaces the review bucket", () => {
+    const output = renderLinksDecideReport(report);
+    expect(output).toContain("2 candidate(s) · model jev-latest · threshold 0.70");
+    expect(output).toContain("Recommend (1):");
+    expect(output).toContain("/blog/post → /pricing");
+    expect(output).toContain("realReason 0.93 · anchorPresent 0.06");
+    expect(output).toContain("Review (1):");
+    expect(output).toContain("/docs/start → /guides");
+  });
+
+  it("states when nothing needs review", () => {
+    const output = renderLinksDecideReport({
+      ...report,
+      counts: { ...report.counts, review: 0 },
+      review: [],
+    });
+    expect(output).toContain("No candidates need review.");
+    expect(output).not.toContain("Review (");
   });
 });

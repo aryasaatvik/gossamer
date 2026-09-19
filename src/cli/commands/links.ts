@@ -1,13 +1,28 @@
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Argument from "effect/unstable/cli/Argument";
 import * as Command from "effect/unstable/cli/Command";
 import * as Flag from "effect/unstable/cli/Flag";
+import type * as Config from "effect/Config";
+import type * as AiError from "effect/unstable/ai/AiError";
+import type * as DecisionModel from "effect/unstable/ai/DecisionModel";
+import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
+import { readFileSync } from "node:fs";
+
+import { TypeSafeClient, TypeSafeDecisionModel } from "@effect/ai-typesafe";
 
 import { crawlRenderedPages } from "../../audit/crawl";
 import { buildRenderedGraph, diffLinkGraph, type SimpleEdge } from "../../core/links";
+import {
+  decideLinks,
+  decodeLinkCandidates,
+  DEFAULT_LINK_THRESHOLD,
+  type LinkCandidate,
+} from "../../links/decide";
 import { acquireGraph, loadSeoConfigOptional } from "../load-config";
 import { jsonFlag, printJson, printText, SeoCliError } from "../output";
-import { renderLinksReport, type LinksVerifyReport } from "../render";
+import { renderLinksDecideReport, renderLinksReport, type LinksVerifyReport } from "../render";
 
 const messageOf = (cause: unknown): string =>
   cause instanceof Error ? cause.message : String(cause);
@@ -199,11 +214,129 @@ const linksVerifyCommand = Command.make("verify", {
   ),
 );
 
+const decideFile = Argument.String("file").pipe(
+  Argument.withDescription("JSON file with an array of link candidates (default: stdin)"),
+  Argument.optional,
+);
+const thresholdFlag = Flag.Finite("threshold").pipe(
+  Flag.withDescription("Probability above which an answer is confident; below is review (0.5 < t < 1)"),
+  Flag.withDefault(DEFAULT_LINK_THRESHOLD),
+);
+const modelFlag = Flag.String("model").pipe(
+  Flag.withDescription("TypeSafe System One model identifier"),
+  Flag.withDefault("jev-latest"),
+);
+const concurrencyFlag = Flag.Int("concurrency").pipe(
+  Flag.withDescription("Maximum concurrent decision calls"),
+  Flag.withDefault(4),
+);
+
+const checkThreshold = (value: number): Effect.Effect<number, SeoCliError> =>
+  Number.isFinite(value) && value > 0.5 && value < 1
+    ? Effect.succeed(value)
+    : Effect.fail(
+        new SeoCliError({
+          message: "--threshold must be greater than 0.5 and less than 1 (a review band needs 1 - t < t)",
+        }),
+      );
+
+/** Read the candidate JSON from a file argument or stdin; a TTY with no file is an error. */
+const readCandidatesText = (file: string | undefined): Effect.Effect<string, SeoCliError> =>
+  Effect.try({
+    try: () => {
+      if (file !== undefined) return readFileSync(file, "utf8");
+      if (process.stdin.isTTY) {
+        throw new Error("no candidate file given and stdin is a TTY");
+      }
+      return readFileSync(0, "utf8");
+    },
+    catch: (cause) =>
+      new SeoCliError({ message: `Could not read candidates: ${messageOf(cause)}` }),
+  });
+
+/** Parse and schema-decode the candidate array; both steps are user input. */
+const parseCandidates = (text: string): Effect.Effect<ReadonlyArray<LinkCandidate>, SeoCliError> =>
+  Effect.try({
+    try: () => decodeLinkCandidates(JSON.parse(text)),
+    catch: (cause) => new SeoCliError({ message: `Invalid candidates: ${messageOf(cause)}` }),
+  });
+
+/** TypeSafe System One decision model over the shared fetch HTTP client. */
+const typeSafeDecisionModel = (
+  model: string,
+): Layer.Layer<DecisionModel.DecisionModel, Config.ConfigError> =>
+  TypeSafeDecisionModel.model(model).pipe(
+    Layer.provide(TypeSafeClient.layerConfig()),
+    Layer.provide(FetchHttpClient.layer),
+  );
+
+const decisionErrorMessage = (error: AiError.AiError | Config.ConfigError): SeoCliError =>
+  error._tag === "AiError"
+    ? new SeoCliError({
+        message: `Decision request failed (${error.reason._tag}): ${error.message}`,
+      })
+    : new SeoCliError({ message: `TypeSafe configuration failed: ${error.message}` });
+
+const linksDecideCommand = Command.make("decide", {
+  file: decideFile,
+  json: jsonFlag,
+  threshold: thresholdFlag,
+  model: modelFlag,
+  concurrency: concurrencyFlag,
+}).pipe(
+  Command.withDescription(
+    "Answer real-reason and anchor-present decisions for candidate links; below-threshold candidates go to review",
+  ),
+  Command.withExamples([
+    {
+      command: "pagegraph links decide candidates.json",
+      description: "Decide a candidate set and print the reviewable plan",
+    },
+    {
+      command: "cat candidates.json | pagegraph links decide --json | jq",
+      description: "Read candidates from stdin and emit versioned JSON",
+    },
+    {
+      command: "pagegraph links decide candidates.json --threshold 0.8",
+      description: "Widen the review band around the decision boundary",
+    },
+  ]),
+  Command.withHandler(
+    Effect.fn("SeoCli.linksDecide")(function* (options) {
+      const threshold = yield* checkThreshold(options.threshold);
+      const concurrency = yield* positive("concurrency", options.concurrency);
+
+      const text = yield* readCandidatesText(Option.getOrUndefined(options.file));
+      const candidates = yield* parseCandidates(text);
+
+      if (process.env.TYPESAFE_API_KEY === undefined || process.env.TYPESAFE_API_KEY === "") {
+        return yield* new SeoCliError({
+          message:
+            "TYPESAFE_API_KEY is not set; `pagegraph links decide` answers through TypeSafe System One.",
+        });
+      }
+
+      const report = yield* decideLinks(candidates, {
+        model: options.model,
+        threshold,
+        concurrency,
+      }).pipe(
+        Effect.provide(typeSafeDecisionModel(options.model)),
+        Effect.mapError(decisionErrorMessage),
+      );
+
+      if (options.json) yield* printJson(report);
+      else yield* printText(renderLinksDecideReport(report));
+    }),
+  ),
+);
+
 /**
- * `pagegraph links` groups rendered link-graph capabilities. `verify` is the
- * first: crawl served HTML and report what a crawler actually receives.
+ * `pagegraph links` groups rendered link-graph capabilities. `verify` crawls
+ * served HTML and reports what a crawler actually receives; `decide` answers
+ * the link decisions over a candidate set through TypeSafe System One.
  */
 export const linksCommand = Command.make("links").pipe(
-  Command.withDescription("Rendered link-graph verification and planning"),
-  Command.withSubcommands([linksVerifyCommand]),
+  Command.withDescription("Rendered link-graph verification and link decisions"),
+  Command.withSubcommands([linksVerifyCommand, linksDecideCommand]),
 );

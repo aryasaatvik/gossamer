@@ -11,6 +11,7 @@ import type { SeoGraph, SeoNode } from "../core/graph";
 import type { LiveHeadReport } from "../core/inspect-html";
 import type { SimpleEdge } from "../core/links";
 import type { NodeReport } from "../core/projections";
+import type { LinkDecisionRecord, LinksDecideReport, LinkVerdict } from "../links/decide";
 
 /** Count of edges pointing *at* each node — 0 means nothing links to it. */
 const incomingCounts = (graph: SeoGraph): Map<string, number> => {
@@ -314,4 +315,54 @@ export const renderLinksReport = (report: LinksVerifyReport): string => {
   }
 
   return lines.join("\n");
+};
+
+const VERDICT_LABELS: Readonly<Record<LinkVerdict, string>> = {
+  recommend: "Recommend",
+  present: "Present",
+  skip: "Skip",
+  review: "Review",
+};
+
+const decisionLine = (record: LinkDecisionRecord): Array<string> => [
+  `  ${record.sourceUrl} → ${record.destinationUrl}`,
+  `    realReason ${record.realReason.toFixed(2)} · anchorPresent ${record.anchorPresent.toFixed(2)}`,
+  `    "${record.sourceText}"`,
+];
+
+const verdictBlock = (verdict: LinkVerdict, records: ReadonlyArray<LinkDecisionRecord>): Array<string> => {
+  if (records.length === 0) return [];
+  const lines: Array<string> = [`${VERDICT_LABELS[verdict]} (${records.length}):`, ""];
+  for (const record of records) lines.push(...decisionLine(record), "");
+  return lines;
+};
+
+/**
+ * Human `links decide` report: what the model answered and which candidates a
+ * human still has to settle. The machine plane (`--json`) is
+ * {@link LinksDecideReport} untouched.
+ */
+export const renderLinksDecideReport = (report: LinksDecideReport): string => {
+  const { counts } = report;
+  const lines: Array<string> = [
+    `${counts.candidates} candidate(s) · model ${report.model} · threshold ${report.threshold.toFixed(2)}`,
+    "",
+    `  recommend  ${counts.recommend}`,
+    `  present    ${counts.present}`,
+    `  skip       ${counts.skip}`,
+    `  review     ${counts.review}`,
+    "",
+  ];
+
+  lines.push(...verdictBlock("recommend", report.resolved.filter((r) => r.verdict === "recommend")));
+  lines.push(...verdictBlock("present", report.resolved.filter((r) => r.verdict === "present")));
+  lines.push(...verdictBlock("skip", report.resolved.filter((r) => r.verdict === "skip")));
+
+  if (report.review.length === 0) {
+    lines.push("No candidates need review.");
+  } else {
+    lines.push(...verdictBlock("review", report.review));
+  }
+
+  return lines.join("\n").trimEnd();
 };

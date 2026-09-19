@@ -49,7 +49,11 @@ export default defineConfig([
     clean: false,
     deps: {
       neverBundle: [/^node:/],
-      alwaysBundle: [/^effect(\/|$)/, /^@effect\//],
+      // Effect and every `@effect/*` package are bundled. `@effect/ai-typesafe`
+      // (the TypeSafe System One `DecisionModel` provider behind
+      // `pagegraph links decide`) is listed explicitly so it stays bundled even
+      // if the broader `@effect/*` pattern is ever narrowed.
+      alwaysBundle: [/^effect(\/|$)/, /^@effect\/ai-typesafe$/, /^@effect\//],
     },
   },
 ]);

@@ -8,6 +8,7 @@
         "@tanstack/router-generator": "^1.167.21",
       },
       "devDependencies": {
+        "@effect/ai-typesafe": "4.0.0-rc.116",
         "@effect/platform-bun": "4.0.0-rc.116",
         "@effect/platform-node-shared": "4.0.0-rc.116",
         "@effect/vitest": "4.0.0-rc.116",
@@ -77,6 +78,8 @@
     "@clack/core": ["@clack/core@1.4.3", "", { "dependencies": { "fast-wrap-ansi": "^0.2.0", "sisteransi": "^1.0.5" } }, "sha512-/kr3UWNtdJfxZtPgDqUOmG2pvwlmcLGheex5yiZKdwbzZJxhV+HMNR9QNmyY5cGwTNV6LrR7Jtp+KjhUAP1qBQ=="],
 
     "@clack/prompts": ["@clack/prompts@1.7.0", "", { "dependencies": { "@clack/core": "1.4.3", "fast-string-width": "^3.0.2", "fast-wrap-ansi": "^0.2.0", "sisteransi": "^1.0.5" } }, "sha512-y7/yvZ2TPAnR9+jnc00klvNNLkJiXFFrQA/hlLCcxA9a2A4zQIOimyFQ9XfwYKiGD1fb5GY8vbKIIgO8d5Tb2A=="],
+
+    "@effect/ai-typesafe": ["@effect/ai-typesafe@4.0.0-rc.116", "", { "peerDependencies": { "effect": "^4.0.0-rc.116" } }, "sha512-yk3PFGCwAHajpTVs7VkCbywgCxbVWDFm90mxjRkTktQZcET8qkenZbNf576V3aWHuKKfp1kDfsWNLdxd/345UA=="],
 
     "@effect/platform-bun": ["@effect/platform-bun@4.0.0-rc.116", "", { "dependencies": { "@effect/platform-node-shared": "^4.0.0-rc.116" }, "peerDependencies": { "effect": "^4.0.0-rc.116" } }, "sha512-gV94s1JJS92xQELdHTOEKHU/QvkGhXxZQ4LI8aBRo9QCy0wyvYNklFYOKXFZQNwp31su2LOYnMf0g1nJZOwYHw=="],
 
