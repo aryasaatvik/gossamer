@@ -7,7 +7,5 @@ core:packages:
       - 2026-08-30-seo-audit-diff.md
     id: npm:pagegraph
     updated: true
-npm:mark-latest:
-  - id: npm:pagegraph
 npm:packages:
   - id: npm:pagegraph
