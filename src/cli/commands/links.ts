@@ -37,26 +37,51 @@ const maxBodyBytes = Flag.Int("max-body-bytes").pipe(
   Flag.withDefault(2_000_000),
 );
 
+interface DeclaredGraph {
+  readonly origin: string;
+  readonly edges: ReadonlyArray<SimpleEdge>;
+}
+
+type DeclaredResult =
+  | { readonly kind: "loaded"; readonly graph: DeclaredGraph }
+  | { readonly kind: "absent" }
+  | { readonly kind: "warning"; readonly message: string };
+
 /**
  * The declared graph is optional input. A missing `seo.config.ts` means the
  * rendered-only report; a config that exists but fails to load is a warning, not
- * a failure, because verifying served HTML works on any deployed site.
+ * a failure, because verifying served HTML works on any deployed site. Origins
+ * are compared before diffing, so a graph from another project is never silently
+ * attributed to this crawl.
  */
-const loadDeclaredEdges: Effect.Effect<ReadonlyArray<SimpleEdge> | undefined> = Effect.gen(
-  function* () {
-    const config = yield* loadSeoConfigOptional;
-    if (config === undefined) return undefined;
-    const graph = yield* Effect.scoped(acquireGraph(config));
-    // Only `related` edges are deliberate in-copy cross-links. Breadcrumbs are
-    // nav-region anchors, redirects render no anchor, and collection membership
-    // is not a rendered link — diffing them against body anchors would be noise.
-    return graph.edges
-      .filter((edge) => edge.type === "related")
-      .map((edge): SimpleEdge => ({ from: edge.from, to: edge.to }));
-  },
-).pipe(
+const loadDeclaredGraph: Effect.Effect<DeclaredResult> = Effect.gen(function* () {
+  const config = yield* loadSeoConfigOptional;
+  if (config === undefined) return { kind: "absent" } as const;
+  let configOrigin: string;
+  try {
+    configOrigin = new URL(config.origin).origin;
+  } catch {
+    return {
+      kind: "warning",
+      message: `Ignoring declared graph: seo.config.ts origin "${config.origin}" is not a valid URL.`,
+    } as const;
+  }
+  const graph = yield* Effect.scoped(acquireGraph(config));
+  // Only `related` edges are deliberate in-copy cross-links. Breadcrumbs are
+  // nav-region anchors, redirects render no anchor, and collection membership
+  // is not a rendered link — diffing them against body anchors would be noise.
+  return {
+    kind: "loaded",
+    graph: {
+      origin: configOrigin,
+      edges: graph.edges
+        .filter((edge) => edge.type === "related")
+        .map((edge): SimpleEdge => ({ from: edge.from, to: edge.to })),
+    },
+  } as const;
+}).pipe(
   Effect.catchTag("SeoCliError", (error) =>
-    Effect.logWarning(`Ignoring declared graph: ${error.message}`).pipe(Effect.as(undefined)),
+    Effect.succeed({ kind: "warning", message: `Ignoring declared graph: ${error.message}` } as const),
   ),
 );
 
@@ -114,10 +139,27 @@ const linksVerifyCommand = Command.make("verify", {
         });
       }
 
-      const graph = buildRenderedGraph(crawl.origin, crawl.pages);
-      const declaredEdges = yield* loadDeclaredEdges;
-      const diff =
-        declaredEdges === undefined ? undefined : diffLinkGraph(declaredEdges, graph);
+      const graph = buildRenderedGraph(crawl.origin, crawl.pages, crawl.root);
+      const warnings: Array<string> = [];
+      if (crawl.truncatedBodies.length > 0) {
+        warnings.push(
+          `${crawl.truncatedBodies.length} page body/bodies exceeded --max-body-bytes; anchors past the cutoff are missing.`,
+        );
+      }
+
+      const declared = yield* loadDeclaredGraph;
+      let declaredEdges: ReadonlyArray<SimpleEdge> | undefined;
+      if (declared.kind === "warning") warnings.push(declared.message);
+      if (declared.kind === "loaded") {
+        if (declared.graph.origin === crawl.origin) {
+          declaredEdges = declared.graph.edges;
+        } else {
+          warnings.push(
+            `Declared graph origin ${declared.graph.origin} differs from crawled origin ${crawl.origin}; skipping the declared-vs-rendered diff.`,
+          );
+        }
+      }
+      const diff = declaredEdges === undefined ? undefined : diffLinkGraph(declaredEdges, graph);
 
       const report: LinksVerifyReport = {
         kind: "links-verify",
@@ -129,6 +171,8 @@ const linksVerifyCommand = Command.make("verify", {
           limit: crawl.limit,
           truncated: crawl.truncated,
           failures: crawl.failures,
+          bodyTruncated: crawl.truncatedBodies.length > 0,
+          truncatedPages: crawl.truncatedBodies,
         },
         rendered: {
           pages: crawl.pages.length,
@@ -146,6 +190,7 @@ const linksVerifyCommand = Command.make("verify", {
                 declaredNotRendered: diff.declaredNotRendered,
                 renderedNotDeclared: diff.renderedNotDeclared,
               },
+        warnings,
       };
 
       if (options.json) yield* printJson(report);

@@ -244,6 +244,10 @@ export interface LinksVerifyReport {
     readonly limit: number;
     readonly truncated: boolean;
     readonly failures: ReadonlyArray<LinksCrawlFailure>;
+    /** True when at least one captured body was cut at `--max-body-bytes`. */
+    readonly bodyTruncated: boolean;
+    /** URLs whose captured body was cut; anchors past the cutoff are missing. */
+    readonly truncatedPages: ReadonlyArray<string>;
   };
   readonly rendered: {
     readonly pages: number;
@@ -258,6 +262,8 @@ export interface LinksVerifyReport {
     readonly declaredNotRendered: ReadonlyArray<SimpleEdge>;
     readonly renderedNotDeclared: ReadonlyArray<SimpleEdge>;
   } | null;
+  /** Non-fatal notes: body truncation, an unusable config, or an origin mismatch. */
+  readonly warnings: ReadonlyArray<string>;
 }
 
 const edgeLine = (edge: SimpleEdge): string => `    ${edge.from} → ${edge.to}`;
@@ -283,7 +289,9 @@ export const renderLinksReport = (report: LinksVerifyReport): string => {
   }
 
   if (report.declared === null) {
-    lines.push("", "No seo.config.ts declared graph — rendered-only report.");
+    if (report.warnings.length === 0) {
+      lines.push("", "No seo.config.ts declared graph — rendered-only report.");
+    }
   } else {
     lines.push(
       "",
@@ -298,6 +306,11 @@ export const renderLinksReport = (report: LinksVerifyReport): string => {
   if (crawl.failures.length > 0) {
     lines.push("", `${crawl.failures.length} page(s) could not be fetched:`);
     for (const failure of crawl.failures) lines.push(`  ${failure.url}  ${failure.error}`);
+  }
+
+  if (report.warnings.length > 0) {
+    lines.push("", `${report.warnings.length} warning(s):`);
+    for (const warning of report.warnings) lines.push(`  ! ${warning}`);
   }
 
   return lines.join("\n");

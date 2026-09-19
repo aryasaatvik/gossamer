@@ -107,7 +107,14 @@ describe("pagegraph links verify", () => {
       schemaVersion: 1,
       origin: target.replace(/\/$/, ""),
       seed: target,
-      crawl: { pages: 6, limit: 100, truncated: false, failures: [] },
+      crawl: {
+        pages: 6,
+        limit: 100,
+        truncated: false,
+        failures: [],
+        bodyTruncated: false,
+        truncatedPages: [],
+      },
       rendered: {
         pages: 6,
         // The /sitemap.xml anchor is a real internal body link even though the
@@ -120,6 +127,7 @@ describe("pagegraph links verify", () => {
         orphans: ["/current"],
       },
       declared: null,
+      warnings: [],
     });
   }, 20_000);
 
@@ -134,13 +142,13 @@ describe("pagegraph links verify", () => {
     expect(report.crawl.truncated).toBe(true);
   }, 20_000);
 
-  it("diffs the declared graph when a seo.config.ts is present", async () => {
+  it("diffs the declared graph when a seo.config.ts matches the crawl origin", async () => {
     const directory = mkdtempSync(join(tmpdir(), "pagegraph-links-"));
     temporaryDirectories.push(directory);
     writeFileSync(
       join(directory, "seo.config.mjs"),
       `export default {
-  origin: "https://example.com",
+  origin: ${JSON.stringify(new URL(target).origin)},
   disallow: [],
   loadGraph: async () => ({
     graph: {
@@ -162,10 +170,44 @@ describe("pagegraph links verify", () => {
         readonly edges: number;
         readonly declaredNotRendered: ReadonlyArray<{ from: string; to: string }>;
       } | null;
+      readonly warnings: ReadonlyArray<string>;
     };
     expect(report.declared?.edges).toBe(1);
     expect(report.declared?.declaredNotRendered).toEqual([
       { from: "/", to: "/declared-only" },
+    ]);
+    expect(report.warnings).toEqual([]);
+  }, 20_000);
+
+  it("skips the declared diff when the config origin differs from the crawl origin", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "pagegraph-links-"));
+    temporaryDirectories.push(directory);
+    writeFileSync(
+      join(directory, "seo.config.mjs"),
+      `export default {
+  origin: "https://elsewhere.example",
+  disallow: [],
+  loadGraph: async () => ({
+    graph: {
+      nodes: new Map([["/", { path: "/", kind: "page", source: "route", policy: { kind: "page" } }]]),
+      edges: [{ from: "/", to: "/declared-only", type: "related" }],
+    },
+    dispose: async () => {},
+  }),
+};
+`,
+    );
+
+    const result = await runLinks([target, "--allow-private", "--json"], directory);
+
+    expect(result.status).toBe(0);
+    const report = JSON.parse(result.stdout) as {
+      readonly declared: unknown;
+      readonly warnings: ReadonlyArray<string>;
+    };
+    expect(report.declared).toBeNull();
+    expect(report.warnings).toEqual([
+      expect.stringContaining("differs from crawled origin"),
     ]);
   }, 20_000);
 
