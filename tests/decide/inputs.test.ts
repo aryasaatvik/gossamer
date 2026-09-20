@@ -15,6 +15,11 @@ describe("decodeInputsText", () => {
     expect(decodeInputsText('{"a":1}\n{"a":2}\n')).toEqual([{ a: 1 }, { a: 2 }]);
   });
 
+  it("reads a singleton JSONL record", () => {
+    expect(decodeInputsText('{"a":1}\n')).toEqual([{ a: 1 }]);
+    expect(decodeInputsText('{\n  "a": 1\n}')).toEqual([{ a: 1 }]);
+  });
+
   it("accepts an empty array", () => {
     expect(decodeInputsText("[]")).toEqual([]);
   });
@@ -23,8 +28,9 @@ describe("decodeInputsText", () => {
     expect(() => decodeInputsText("   ")).toThrow("no input provided");
   });
 
-  it("rejects JSON that is neither an array nor an inputs envelope", () => {
-    expect(() => decodeInputsText('{"a":1}')).toThrow("expected a JSON array");
+  it("rejects a JSON scalar", () => {
+    expect(() => decodeInputsText("5")).toThrow("expected a JSON array");
+    expect(() => decodeInputsText('"x"')).toThrow("expected a JSON array");
   });
 
   it("rejects malformed text", () => {

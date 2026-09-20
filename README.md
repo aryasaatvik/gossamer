@@ -445,7 +445,7 @@ argument or stdin. Flags are shared across families:
 | `--model <id>`    | `jev-latest` | TypeSafe System One model (`jev-latest`, `jev-preview`, …)     |
 | `--threshold <t>` | `0.7`       | Confidence boundary; `(1−t, t)` is the review band             |
 | `--concurrency <n>` | `4`       | In-flight decision calls                                       |
-| `--cache <dir>`   | —           | Reuse model answers by input hash                              |
+| `--cache <dir>`   | —           | Reuse model answers by family + model + input hash             |
 | `--review-out <file>` | —       | Write only the below-threshold records to JSON                 |
 
 `pagegraph decide links` is the links family alias of `pagegraph links decide` (see

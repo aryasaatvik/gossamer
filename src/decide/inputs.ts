@@ -15,6 +15,8 @@ export const decodeInputsText = (text: string): ReadonlyArray<unknown> => {
   try {
     parsed = JSON.parse(trimmed);
   } catch (error) {
+    // The whole body is not one JSON value, so a multi-line body can only be
+    // newline-delimited records.
     const lines = trimmed
       .split("\n")
       .map((line) => line.trim())
@@ -30,8 +32,11 @@ export const decodeInputsText = (text: string): ReadonlyArray<unknown> => {
   }
 
   if (Array.isArray(parsed)) return parsed;
-  if (parsed !== null && typeof parsed === "object" && Array.isArray((parsed as { inputs?: unknown }).inputs)) {
-    return (parsed as { inputs: ReadonlyArray<unknown> }).inputs;
+  if (parsed !== null && typeof parsed === "object") {
+    const inputs = (parsed as { inputs?: unknown }).inputs;
+    if (Array.isArray(inputs)) return inputs;
+    // A single JSON object is a one-record JSONL batch, not an envelope.
+    return [parsed];
   }
   throw new Error('expected a JSON array, a { "inputs": [...] } envelope, or JSONL');
 };

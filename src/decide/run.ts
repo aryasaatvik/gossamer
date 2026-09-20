@@ -54,6 +54,19 @@ export const anyInReviewBand = (
 export const inputHash = (input: unknown): string =>
   createHash("sha256").update(JSON.stringify(input)).digest("hex");
 
+/** Bump when a family's answer shape changes, so old cache files stop matching. */
+export const DECISION_ANSWER_SCHEMA_VERSION = 1;
+
+/**
+ * Cache identity. Answers depend on the family and the model as well as the
+ * input, so keying by the input hash alone would let a different family or model
+ * reuse incompatible answers. The answer-schema version guards shape changes.
+ */
+export const cacheKey = (family: string, model: string, answerHash: string): string =>
+  createHash("sha256")
+    .update(`${family}\u0000${model}\u0000v${DECISION_ANSWER_SCHEMA_VERSION}\u0000${answerHash}`)
+    .digest("hex");
+
 export interface RunOptions<Input> {
   readonly family: DecisionFamily<Input>;
   readonly inputs: ReadonlyArray<Input>;
@@ -110,7 +123,8 @@ export const runDecisions = <Input>(
       (input, index) =>
         Effect.gen(function* () {
           const hash = inputHash(input);
-          const cached = options.cacheDir === undefined ? undefined : cacheGet(options.cacheDir, hash);
+          const key = cacheKey(options.family.name, options.model, hash);
+          const cached = options.cacheDir === undefined ? undefined : cacheGet(options.cacheDir, key);
           let answers: unknown;
           let usage: DecisionRecord["usage"];
           if (cached !== undefined) {
@@ -124,7 +138,7 @@ export const runDecisions = <Input>(
               inputTokens: response.usage.inputTokens,
               outputTokens: response.usage.outputTokens,
             };
-            if (options.cacheDir !== undefined) cachePut(options.cacheDir, hash, answers);
+            if (options.cacheDir !== undefined) cachePut(options.cacheDir, key, answers);
           }
           const verdict = options.family.evaluate(input, answers, options.threshold);
           return {

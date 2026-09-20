@@ -208,6 +208,7 @@ const runLinks = (options: DecideOptions): Effect.Effect<void, SeoCliError> =>
       model: options.model,
       threshold,
       concurrency,
+      cacheDir: Option.getOrUndefined(options.cache),
     }).pipe(
       Effect.provide(typeSafeDecisionModel(options.model)),
       Effect.mapError(decisionErrorMessage),

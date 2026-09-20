@@ -10,6 +10,7 @@ import { afterAll, describe, expect, it } from "vitest";
 
 import {
   buildDecisionReport,
+  cacheKey,
   decodeFamilyInputs,
   inputHash,
   runDecisions,
@@ -96,6 +97,17 @@ describe("inputHash", () => {
     expect(inputHash({ a: 1 })).toBe(inputHash({ a: 1 }));
     expect(inputHash({ a: 1 })).not.toBe(inputHash({ a: 2 }));
     expect(inputHash("x")).toHaveLength(64);
+  });
+});
+
+describe("cacheKey", () => {
+  it("isolates family, model, and input", () => {
+    const base = cacheKey("serp", "jev-latest", "h");
+    expect(base).toBe(cacheKey("serp", "jev-latest", "h"));
+    expect(base).not.toBe(cacheKey("serp", "jev-preview", "h"));
+    expect(base).not.toBe(cacheKey("content", "jev-latest", "h"));
+    expect(base).not.toBe(cacheKey("serp", "jev-latest", "h2"));
+    expect(base).toHaveLength(64);
   });
 });
 
