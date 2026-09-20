@@ -2,6 +2,7 @@ import * as Command from "effect/unstable/cli/Command";
 
 import { checkCommand } from "./commands/check";
 import { auditCommand } from "./commands/audit";
+import { decideCommandGroup } from "./commands/decide";
 import { diffCommand } from "./commands/diff";
 import { graphCommand } from "./commands/graph";
 import { inspectCommand } from "./commands/inspect";
@@ -33,6 +34,7 @@ export const cli = Command.make("pagegraph").pipe(
   ]),
   Command.withSubcommands([
     auditCommand,
+    decideCommandGroup,
     diffCommand,
     graphCommand,
     inspectCommand,

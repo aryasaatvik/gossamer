@@ -17,6 +17,9 @@ import * as Schema from "effect/Schema";
 import { Decision, DecisionModel } from "effect/unstable/ai";
 import type * as AiError from "effect/unstable/ai/AiError";
 
+import { cacheGet, cachePut } from "../decide/cache";
+import { cacheKey, inputHash, validCachedAnswers } from "../decide/run";
+
 /** Default probability boundary between a confident and an uncertain answer. */
 export const DEFAULT_LINK_THRESHOLD = 0.7;
 
@@ -145,10 +148,34 @@ export const buildLinksDecideReport = (options: {
   };
 };
 
+/** The two validated answers a record is built from, cache-compatible JSON. */
+interface LinkAnswers {
+  readonly realReason: { readonly probability: number };
+  readonly anchorPresent: { readonly probability: number };
+}
+
+const toRecord = (
+  candidate: LinkCandidate,
+  answers: LinkAnswers,
+  threshold: number,
+): LinkDecisionRecord => {
+  const realReason = answers.realReason.probability;
+  const anchorPresent = answers.anchorPresent.probability;
+  return {
+    sourceUrl: candidate.sourceUrl,
+    destinationUrl: candidate.destinationUrl,
+    sourceText: candidate.sourceText,
+    existingAnchor: candidate.existingAnchor ?? null,
+    realReason,
+    anchorPresent,
+    verdict: classifyVerdict(realReason, anchorPresent, threshold),
+  };
+};
+
 /**
  * Answer every candidate through the ambient `DecisionModel` and bucket the
  * results. The model answers both decisions in one call per candidate; candidates
- * are dispatched with bounded concurrency.
+ * are dispatched with bounded concurrency. A warm cache skips the provider.
  */
 export const decideLinks = (
   candidates: ReadonlyArray<LinkCandidate>,
@@ -156,27 +183,26 @@ export const decideLinks = (
     readonly model: string;
     readonly threshold: number;
     readonly concurrency?: number;
+    /** Cache directory; absent means no cache. */
+    readonly cacheDir?: string;
   },
 ): Effect.Effect<LinksDecideReport, AiError.AiError, DecisionModel.DecisionModel> =>
   Effect.gen(function* () {
     const records = yield* Effect.forEach(
       candidates,
       (candidate) =>
-        DecisionModel.decide(LinkDecision, { input: candidate }).pipe(
-          Effect.map(({ answers }): LinkDecisionRecord => {
-            const realReason = answers.realReason.probability;
-            const anchorPresent = answers.anchorPresent.probability;
-            return {
-              sourceUrl: candidate.sourceUrl,
-              destinationUrl: candidate.destinationUrl,
-              sourceText: candidate.sourceText,
-              existingAnchor: candidate.existingAnchor ?? null,
-              realReason,
-              anchorPresent,
-              verdict: classifyVerdict(realReason, anchorPresent, options.threshold),
-            };
-          }),
-        ),
+        Effect.gen(function* () {
+          const hash = inputHash(candidate);
+          const key = cacheKey("links", options.model, hash);
+          const cached =
+            options.cacheDir === undefined ? undefined : cacheGet(options.cacheDir, key);
+          if (cached !== undefined && validCachedAnswers(LinkDecision.decisions, cached)) {
+            return toRecord(candidate, cached as LinkAnswers, options.threshold);
+          }
+          const { answers } = yield* DecisionModel.decide(LinkDecision, { input: candidate });
+          if (options.cacheDir !== undefined) cachePut(options.cacheDir, key, answers);
+          return toRecord(candidate, answers, options.threshold);
+        }),
       { concurrency: options.concurrency ?? 4 },
     );
     return buildLinksDecideReport({
