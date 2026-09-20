@@ -476,6 +476,36 @@ Input: one saved results-page snapshot per input.
 | `mismatch` | At least one of intent/format is confidently wrong.                |
 | `review`   | Any answer (`ourFormatFit`, `intentMatch`, `titlePatternMatch`) is inside the band. |
 
+#### `decide content` — does this page carry enough substance?
+
+Input: one page per input, with the evidence the rubric reads.
+
+```json
+{
+  "url": "https://example.com/email-api",
+  "query": "best email api",
+  "title": "Transactional email API for product teams",
+  "h1": "Send transactional email",
+  "first150Words": "The API sends one message per call and reports delivery events.",
+  "headings": ["Quickstart", "Events", "Pricing"],
+  "wordCount": 1200,
+  "structuredData": ["Article", "FAQPage"],
+  "categoryLock": "email api",
+  "siblingIntents": ["email deliverability", "sms api"],
+  "competitorExcerpts": ["A competitor's overview."]
+}
+```
+
+| Verdict  | Meaning                                                                     |
+| -------- | --------------------------------------------------------------------------- |
+| `pass`   | The value rating is not `thin` and no rubric probability is confidently false. |
+| `flag`   | Value is `thin`, or a rubric probability (`originalValue`, `answersFirst`, …) is confidently false. |
+| `review` | Any rubric or value probability is inside the band, or an evidence-dependent rubric (`distinctIntent`, `competitiveSubstance`) is confidently positive without `siblingIntents`/`competitorExcerpts`. |
+
+`wordCount` must be a non-negative integer.
+
+`value` rates `thin | adequate | strong`.
+
 ### Contextual-link coverage
 
 Declare a contextual-link coverage policy in `seo.config.ts` (a `coverage` array
