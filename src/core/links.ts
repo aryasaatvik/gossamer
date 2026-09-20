@@ -176,6 +176,29 @@ const breadthFirstDepth = (
 };
 
 /**
+ * Assemble a {@link RenderedGraph} from page/edge sets. Edges are already
+ * same-origin and path-keyed by the callers, so this is the shared, pure tail of
+ * {@link buildRenderedGraph} and {@link renderedGraphFromEdges}.
+ */
+const graphFromEdges = (
+  nodes: Set<string>,
+  edges: Array<LinkEdge>,
+  root: string,
+): RenderedGraph => {
+  const rootKey = root.replace(/\/+$/, "") || "/";
+  const internalEdges = edges;
+  const contextualEdges = edges.filter((edge) => edge.region === "body");
+  const incoming = new Set(internalEdges.map((edge) => edge.to));
+  const orphans = [...nodes].filter((path) => path !== rootKey && !incoming.has(path)).sort();
+  const depthByPath = breadthFirstDepth(internalEdges, rootKey);
+  let maxDepth: number | null = null;
+  for (const value of depthByPath.values()) {
+    if (maxDepth === null || value > maxDepth) maxDepth = value;
+  }
+  return { edges, internalEdges, contextualEdges, orphans, depthByPath, maxDepth };
+};
+
+/**
  * Build the rendered graph from crawled pages. `origin` fixes the graph's
  * same-origin boundary — pages and anchors on another origin are dropped, not
  * silently folded in — and `root` is the normalized path the depth BFS starts
@@ -189,7 +212,6 @@ export const buildRenderedGraph = (
 ): RenderedGraph => {
   const originUrl = new URL(origin);
   const graphOrigin = originUrl.origin;
-  const rootKey = root.replace(/\/+$/, "") || "/";
   const edges: Array<LinkEdge> = [];
   const nodes = new Set<string>();
   for (const page of pages) {
@@ -215,18 +237,39 @@ export const buildRenderedGraph = (
       edges.push({ from: path, to: target, region: anchor.region });
     }
   }
-  const internalEdges = edges;
-  const contextualEdges = edges.filter((edge) => edge.region === "body");
-  const incoming = new Set(internalEdges.map((edge) => edge.to));
-  const orphans = [...nodes]
-    .filter((path) => path !== rootKey && !incoming.has(path))
-    .sort();
-  const depthByPath = breadthFirstDepth(internalEdges, rootKey);
-  let maxDepth: number | null = null;
-  for (const value of depthByPath.values()) {
-    if (maxDepth === null || value > maxDepth) maxDepth = value;
+  return graphFromEdges(nodes, edges, root);
+};
+
+/** A URL or an already-normalized graph path key both collapse to the path key. */
+const pathKeyOf = (value: string): string => {
+  try {
+    return normalizePath(new URL(value));
+  } catch {
+    const pathname = value.split(/[?#]/, 1)[0] ?? "";
+    return pathname.replace(/\/+$/, "") || "/";
   }
-  return { edges, internalEdges, contextualEdges, orphans, depthByPath, maxDepth };
+};
+
+/**
+ * Rebuild a {@link RenderedGraph} from a rendered-edge set alone — the artifact
+ * `pagegraph links verify --emit-rendered` writes. Path keys are normalized the
+ * same way as a crawl, so an edge list and a live crawl of the same pages yield
+ * the same orphan set, depth, and contextual split. `region` is preserved.
+ */
+export const renderedGraphFromEdges = (
+  edges: ReadonlyArray<LinkEdge>,
+  root: string = "/",
+): RenderedGraph => {
+  const nodes = new Set<string>();
+  const kept: Array<LinkEdge> = [];
+  for (const edge of edges) {
+    const from = pathKeyOf(edge.from);
+    const to = pathKeyOf(edge.to);
+    nodes.add(from);
+    nodes.add(to);
+    kept.push({ from, to, region: edge.region });
+  }
+  return graphFromEdges(nodes, kept, root);
 };
 
 export interface SimpleEdge {
@@ -274,5 +317,138 @@ export const diffLinkGraph = (
     renderedNotDeclared,
     declaredCount: declaredNormalized.length,
     renderedContextualCount: rendered.contextualEdges.length,
+  };
+};
+
+/**
+ * Provenance for a rendered-edge artifact: enough to trust the edges and to
+ * refuse a gate that would assert on an incomplete crawl. `root` is the seed's
+ * normalized final path (its post-redirect path), so depth and orphans rebuild
+ * exactly as the crawl computed them.
+ */
+export interface RenderedEdgeArtifactCrawl {
+  /** Pages whose HTML was rendered into `edges`. */
+  readonly pages: number;
+  /** Normalized final path of the seed — the depth BFS root. */
+  readonly root: string;
+  /** The crawl's page budget (`--limit`). */
+  readonly limit: number;
+  /** True when discovery outran `limit`; a gate must not assert on this. */
+  readonly truncated: boolean;
+  /** True when any captured body was cut at `--max-body-bytes`. */
+  readonly bodyTruncated: boolean;
+  /** URLs whose captured body was cut; anchors past the cutoff are missing. */
+  readonly truncatedPages: ReadonlyArray<string>;
+}
+
+/**
+ * The stable, `decodeRenderedEdges`-compatible artifact `pagegraph links verify
+ * --emit-rendered` writes and `--rendered` reads. It carries the raw served edges
+ * (with `region`) plus the provenance a coverage gate needs to decide whether the
+ * crawl is trustworthy, so one crawl can be asserted repeatedly without
+ * re-fetching.
+ */
+export interface RenderedEdgeArtifact {
+  readonly kind: "links-rendered";
+  readonly schemaVersion: 1;
+  readonly origin: string;
+  readonly seed: string;
+  readonly crawl: RenderedEdgeArtifactCrawl;
+  readonly edges: ReadonlyArray<LinkEdge>;
+}
+
+/** The rendered-edge artifact schema this package writes and accepts. */
+export const RENDERED_EDGE_ARTIFACT_SCHEMA_VERSION = 1 as const;
+
+const REGIONS: ReadonlySet<string> = new Set(["nav", "footer", "header", "body"]);
+
+const decodeArtifactEdges = (input: unknown): ReadonlyArray<LinkEdge> => {
+  if (!Array.isArray(input)) {
+    throw new Error("`edges` must be an array of { from, to, region } edges");
+  }
+  return input.map((item) => {
+    if (item === null || typeof item !== "object") {
+      throw new Error("each artifact edge must be an object with string `from` and `to`");
+    }
+    const { from, to, region } = item as { from?: unknown; to?: unknown; region?: unknown };
+    if (typeof from !== "string" || typeof to !== "string") {
+      throw new Error("each artifact edge must have string `from` and `to`");
+    }
+    if (region !== undefined && !REGIONS.has(region as string)) {
+      throw new Error(
+        `artifact edge region must be one of nav, footer, header, body (received ${JSON.stringify(region)})`,
+      );
+    }
+    return { from, to, region: (region as AnchorRegion | undefined) ?? "body" };
+  });
+};
+
+const requiredString = (value: unknown, field: string): string => {
+  if (typeof value !== "string" || value === "") {
+    throw new Error(`rendered-edge artifact must carry a non-empty string \`${field}\``);
+  }
+  return value;
+};
+
+const requiredInteger = (value: unknown, field: string, minimum: number): number => {
+  if (!Number.isSafeInteger(value) || (value as number) < minimum) {
+    throw new Error(
+      `rendered-edge artifact \`${field}\` must be an integer >= ${minimum} (received ${JSON.stringify(value)})`,
+    );
+  }
+  return value as number;
+};
+
+/**
+ * Decode a rendered-edge artifact from user input. Throws on any other shape —
+ * this is user input, not a provider payload. `root`, `bodyTruncated`, and
+ * `truncatedPages` are optional so a hand-written edge dump that only carries
+ * provenance can still be replayed.
+ */
+export const decodeRenderedEdgeArtifact = (input: unknown): RenderedEdgeArtifact => {
+  if (input === null || typeof input !== "object") {
+    throw new Error("rendered-edge artifact must be an object");
+  }
+  const value = input as Record<string, unknown>;
+  if (value["schemaVersion"] !== RENDERED_EDGE_ARTIFACT_SCHEMA_VERSION) {
+    throw new Error(
+      `unsupported rendered-edge artifact schemaVersion: ${JSON.stringify(value["schemaVersion"])}`,
+    );
+  }
+  const origin = requiredString(value["origin"], "origin");
+  const seed = requiredString(value["seed"], "seed");
+  const crawl = value["crawl"];
+  if (crawl === null || typeof crawl !== "object") {
+    throw new Error("rendered-edge artifact must carry a `crawl` object");
+  }
+  const provenance = crawl as Record<string, unknown>;
+  const truncatedPages = provenance["truncatedPages"];
+  if (
+    truncatedPages !== undefined &&
+    (!Array.isArray(truncatedPages) || !truncatedPages.every((url) => typeof url === "string"))
+  ) {
+    throw new Error("rendered-edge artifact `truncatedPages` must be an array of URLs");
+  }
+  const bodyTruncated = provenance["bodyTruncated"];
+  if (bodyTruncated !== undefined && typeof bodyTruncated !== "boolean") {
+    throw new Error("rendered-edge artifact `bodyTruncated` must be a boolean");
+  }
+  if (typeof provenance["truncated"] !== "boolean") {
+    throw new Error("rendered-edge artifact `crawl.truncated` must be a boolean");
+  }
+  return {
+    kind: "links-rendered",
+    schemaVersion: RENDERED_EDGE_ARTIFACT_SCHEMA_VERSION,
+    origin,
+    seed,
+    crawl: {
+      pages: requiredInteger(provenance["pages"], "crawl.pages", 0),
+      root: typeof provenance["root"] === "string" ? provenance["root"] : pathKeyOf(seed),
+      limit: requiredInteger(provenance["limit"], "crawl.limit", 1),
+      truncated: provenance["truncated"],
+      bodyTruncated: bodyTruncated === true,
+      truncatedPages: (truncatedPages as ReadonlyArray<string> | undefined) ?? [],
+    },
+    edges: decodeArtifactEdges(value["edges"]),
   };
 };

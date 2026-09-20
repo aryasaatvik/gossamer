@@ -24,7 +24,7 @@ export type {
 export { contentSignal, inspectNode, isSitemapEligible, renderRobots, renderSitemap } from "./projections";
 export type { NodeReport, ProjectionConfig, RobotsConfig } from "./projections";
 
-export { checkCoverage, checkGraph, hasStructuralViolations } from "./checks";
+export { checkCoverage, checkGraph, checkRenderedCoverage, hasStructuralViolations } from "./checks";
 export type { CoverageRule, Severity, Violation } from "./checks";
 
 export {
@@ -48,15 +48,20 @@ export { resolveRouteLink } from "./resolve-route-link";
 
 export {
   buildRenderedGraph,
+  decodeRenderedEdgeArtifact,
   diffLinkGraph,
   extractAnchors,
   normalizePath,
+  RENDERED_EDGE_ARTIFACT_SCHEMA_VERSION,
+  renderedGraphFromEdges,
 } from "./links";
 export type {
   Anchor,
   AnchorRegion,
   LinkEdge,
   LinkGraphDiff,
+  RenderedEdgeArtifact,
+  RenderedEdgeArtifactCrawl,
   RenderedGraph,
   RenderedPage,
   SimpleEdge,

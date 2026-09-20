@@ -1,8 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import { checkCoverage, checkGraph, hasStructuralViolations } from "../../src/core/checks";
+import {
+  checkCoverage,
+  checkGraph,
+  checkRenderedCoverage,
+  hasStructuralViolations,
+} from "../../src/core/checks";
 import type { RouteSeo, SeoKind } from "../../src/core/declare";
 import type { SeoEdge, SeoGraph, SeoNode } from "../../src/core/graph";
+import type { LinkEdge } from "../../src/core/links";
 
 const SITEMAP = { priority: 0.5, changeFrequency: "monthly" } as const;
 
@@ -103,6 +109,67 @@ describe("checkCoverage", () => {
     const violations = checkCoverage(graph, [{ path: "/draft", minInbound: 1 }]);
     expect(violations[0]?.rule).toBe("coverage-rule-unmatched");
     expect(violations[0]?.message).toContain("not sitemap-eligible");
+  });
+});
+
+describe("checkRenderedCoverage", () => {
+  const body = (from: string, to: string): LinkEdge => ({ from, to, region: "body" });
+  const nav = (from: string, to: string): LinkEdge => ({ from, to, region: "nav" });
+
+  it("counts served body anchors and ignores chrome regions", () => {
+    const graph = graphOf([moneyNode("/pricing"), moneyNode("/about")], []);
+    const violations = checkRenderedCoverage(
+      graph,
+      [body("/about", "/pricing"), nav("/", "/pricing")],
+      [{ path: "/pricing", minInbound: 2 }],
+    );
+    expect(violations).toHaveLength(1);
+    expect(violations[0]).toMatchObject({ rule: "inbound-link-coverage", path: "/pricing" });
+    expect(violations[0]?.message).toContain("has 1 incoming");
+  });
+
+  it("passes when the served body anchors meet the rule", () => {
+    const graph = graphOf([moneyNode("/pricing"), moneyNode("/about")], []);
+    expect(
+      checkRenderedCoverage(
+        graph,
+        [body("/about", "/pricing")],
+        [{ path: "/pricing", minInbound: 1 }],
+      ),
+    ).toEqual([]);
+  });
+
+  it("uses the declared sitemap-eligible universe for rule matching", () => {
+    const graph = graphOf([
+      moneyNode("/pricing"),
+      routeNode("/draft", { kind: "page", sitemap: { ...SITEMAP }, robots: "noindex" }),
+    ]);
+    // A rule aimed at a declared noindex page cannot be asserted on rendered data.
+    const unmatched = checkRenderedCoverage(
+      graph,
+      [body("/", "/draft")],
+      [{ path: "/draft", minInbound: 1 }],
+    );
+    expect(unmatched[0]?.rule).toBe("coverage-rule-unmatched");
+    expect(unmatched[0]?.message).toContain("not sitemap-eligible");
+    // A glob that matches no declared page reports accordingly.
+    const missing = checkRenderedCoverage(graph, [], [{ path: "/missing", minInbound: 1 }]);
+    expect(missing[0]?.message).toContain("matches no page");
+  });
+
+  it("does not count outgoing or crumb-only declarations", () => {
+    const graph = graphOf(
+      [moneyNode("/pricing"), moneyNode("/about")],
+      [related("/pricing", "/about")],
+    );
+    // Declared related edge exists, but nothing renders an anchor into /pricing.
+    expect(
+      checkRenderedCoverage(
+        graph,
+        [body("/pricing", "/about")],
+        [{ path: "/pricing", minInbound: 1 }],
+      ),
+    ).toHaveLength(1);
   });
 });
 

@@ -19,6 +19,7 @@
 
 import type { SitemapPolicy } from "./declare";
 import type { SeoGraph, SeoNode } from "./graph";
+import type { LinkEdge } from "./links";
 import { isSitemapEligible } from "./projections";
 
 export type Severity = "structural" | "editorial";
@@ -33,14 +34,19 @@ export interface Violation {
 
 /**
  * A contextual-link coverage rule: every sitemap-eligible page matching the
- * `path` glob must have at least `minInbound` incoming `related` edges. Unlike
+ * `path` glob must have at least `minInbound` incoming contextual links. Unlike
  * the static rules, these come from project policy (a CLI flag or
  * `seo.config.ts`), because "which pages are money pages" is app knowledge.
+ *
+ * The same rule shape is evaluated twice: `checkCoverage` counts declared
+ * `related` edges, and `checkRenderedCoverage` counts the contextual anchors a
+ * crawl actually served. The target universe is always the declared graph's
+ * sitemap-eligible pages — the rendered pass only swaps the edge source.
  */
 export interface CoverageRule {
   /** Path glob: `*` matches within a segment, `**` matches across segments. */
   readonly path: string;
-  /** Minimum incoming contextual (`related`) edges the matched page needs. */
+  /** Minimum incoming contextual links the matched page needs. */
   readonly minInbound: number;
 }
 
@@ -355,22 +361,32 @@ const globToRegExp = (glob: string): RegExp => {
 };
 
 /**
- * Enforce contextual-link coverage rules: a named set of sitemap-eligible
- * "money" pages each needs `minInbound` incoming `related` edges. Only
- * `related` edges count — breadcrumb ancestry is navigation, not context.
+ * The minimal view a coverage rule needs: which paths exist (for the glob), which
+ * of them are sitemap-eligible (the enforced set), and how many contextual links
+ * each receives. Declared and rendered coverage differ only in how this surface
+ * is built, so the rule engine itself stays single-sourced.
+ */
+interface CoverageSurface {
+  readonly paths: ReadonlyArray<string>;
+  readonly eligiblePaths: ReadonlyArray<string>;
+  readonly inbound: (path: string) => number;
+}
+
+/**
+ * Enforce contextual-link coverage rules over an explicit surface.
  *
  * A rule that matches no sitemap-eligible page is itself a violation: a typo or
  * a rule aimed at a noindex page would otherwise pass silently forever.
  */
-export function checkCoverage(
-  graph: SeoGraph,
+const checkCoverageRules = (
+  surface: CoverageSurface,
   rules: ReadonlyArray<CoverageRule>,
-): Array<Violation> {
+): Array<Violation> => {
   const violations: Array<Violation> = [];
   for (const rule of rules) {
     const matcher = globToRegExp(rule.path);
-    const matched = [...graph.nodes.values()].filter((node) => matcher.test(node.path));
-    const eligible = matched.filter(isSitemapEligible);
+    const matched = surface.paths.filter((path) => matcher.test(path));
+    const eligible = surface.eligiblePaths.filter((path) => matcher.test(path));
 
     if (eligible.length === 0) {
       violations.push({
@@ -385,21 +401,73 @@ export function checkCoverage(
       continue;
     }
 
-    for (const node of eligible) {
-      const inbound = graph.edges.filter(
-        (edge) => edge.type === "related" && edge.to === node.path,
-      ).length;
+    for (const path of eligible) {
+      const inbound = surface.inbound(path);
       if (inbound >= rule.minInbound) continue;
       violations.push({
         severity: "structural",
         rule: "inbound-link-coverage",
-        path: node.path,
-        message: `"${node.path}" has ${inbound} incoming contextual link(s); the coverage rule requires ${rule.minInbound}.`,
-        fix: `Add ${rule.minInbound - inbound} contextual (related) edge(s) pointing at "${node.path}".`,
+        path,
+        message: `"${path}" has ${inbound} incoming contextual link(s); the coverage rule requires ${rule.minInbound}.`,
+        fix: `Add ${rule.minInbound - inbound} contextual link(s) pointing at "${path}".`,
       });
     }
   }
   return violations;
+};
+
+/** The sitemap-eligible path set of a declared graph, in graph insertion order. */
+const eligiblePathsOf = (graph: SeoGraph): ReadonlyArray<string> =>
+  [...graph.nodes.values()].filter(isSitemapEligible).map((node) => node.path);
+
+/**
+ * Enforce contextual-link coverage against the *declared* graph: only `related`
+ * edges count — breadcrumb ancestry is navigation, not context.
+ */
+export function checkCoverage(
+  graph: SeoGraph,
+  rules: ReadonlyArray<CoverageRule>,
+): Array<Violation> {
+  return checkCoverageRules(
+    {
+      paths: [...graph.nodes.keys()],
+      eligiblePaths: eligiblePathsOf(graph),
+      inbound: (path) =>
+        graph.edges.filter((edge) => edge.type === "related" && edge.to === path).length,
+    },
+    rules,
+  );
+}
+
+/**
+ * Enforce contextual-link coverage against the *rendered* graph: only same-origin
+ * body-region anchors count. Nav, header, and footer anchors are site chrome, so
+ * a page linked solely from them has no contextual inbound link — the same
+ * distinction the declared pass draws by counting `related` edges alone.
+ *
+ * The target universe is the declared graph's sitemap-eligible pages: the globs
+ * in `seo.config.ts` are written against declared paths, and the crawl is what
+ * supplies the served edges. Pass the crawl's `internalEdges` (each edge carries
+ * its `region`).
+ */
+export function checkRenderedCoverage(
+  graph: SeoGraph,
+  renderedEdges: ReadonlyArray<LinkEdge>,
+  rules: ReadonlyArray<CoverageRule>,
+): Array<Violation> {
+  const inbound = new Map<string, number>();
+  for (const edge of renderedEdges) {
+    if (edge.region !== "body") continue;
+    inbound.set(edge.to, (inbound.get(edge.to) ?? 0) + 1);
+  }
+  return checkCoverageRules(
+    {
+      paths: [...graph.nodes.keys()],
+      eligiblePaths: eligiblePathsOf(graph),
+      inbound: (path) => inbound.get(path) ?? 0,
+    },
+    rules,
+  );
 }
 
 /** Structural violations fail `pagegraph check`; editorial-only stays green. */

@@ -27,7 +27,7 @@ bun add -D lighthouse   # only for `pagegraph audit` performance evidence
 
 | Entry                        | Exports                                                                                        | Peers                                       |
 | ---------------------------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------- |
-| `pagegraph`        | `buildSeoGraph`, `renderSitemap`, `renderRobots`, `contentSignal`, `checkGraph`, `inspectHtml` | —                                           |
+| `pagegraph`        | `buildSeoGraph`, `renderSitemap`, `renderRobots`, `contentSignal`, `checkGraph`, `checkRenderedCoverage`, `decodeRenderedEdgeArtifact`, `inspectHtml` | —                                           |
 | `pagegraph/react`  | `createSeo` → `seoHead`, `Breadcrumbs`, JSON-LD generators                                     | `react`, `@tanstack/react-router`           |
 | `pagegraph/vite`   | `seoRouteConfig` coverage gate                                                                 | `vite`                                      |
 | `pagegraph/config` | `defineSeoConfig`, `viteGraphLoader`                                                           | `vite`                                      |
@@ -305,6 +305,8 @@ pagegraph graph                 # the graph as a tree · --format mermaid | json
 pagegraph inspect /pricing      # one node: policy, sitemap status, in/out edges
 pagegraph inspect <url> --live  # fetch a deployed page, validate its rendered <head>
 pagegraph links verify <url>    # crawl served HTML: depth, orphans, declared-vs-rendered
+pagegraph links verify <url> --assert-coverage  # also assert seo.config.ts coverage on served anchors
+pagegraph links verify <url> --emit-rendered <file>  # save the rendered edge set
 pagegraph links candidates      # propose contextual links from the declared graph
 pagegraph links decide <file>   # answer typed link questions with Jev (TYPESAFE_API_KEY)
 pagegraph sitemap               # print sitemap.xml
@@ -326,6 +328,59 @@ framework or config:
 pagegraph links verify https://example.com
 pagegraph links verify https://example.com --limit 25 --json | jq
 ```
+
+`--emit-rendered <path>` writes the crawl's raw edge set as a versioned artifact,
+and `--rendered <path>` replays one instead of crawling — so a single crawl can be
+asserted repeatedly in CI without re-fetching:
+
+```bash
+pagegraph links verify https://example.com --emit-rendered .seo/rendered.json
+pagegraph links verify --rendered .seo/rendered.json --json | jq
+```
+
+The artifact preserves every anchor's `region` (`body` vs `nav`/`footer`/`header`)
+and the provenance a gate needs to trust it:
+
+```jsonc
+{
+  "kind": "links-rendered",
+  "schemaVersion": 1,
+  "origin": "https://example.com",
+  "seed": "https://example.com/",
+  "crawl": {
+    "pages": 42,
+    "root": "/",
+    "limit": 100,
+    "truncated": false,
+    "bodyTruncated": false,
+    "truncatedPages": [],
+  },
+  "edges": [{ "from": "/", "to": "/pricing", "region": "body" }],
+}
+```
+
+It is also a drop-in input for `pagegraph links candidates --rendered`.
+
+### Assert coverage on the rendered graph
+
+`pagegraph check` evaluates the `seo.config.ts` `coverage` rules against the
+**declared** graph; `pagegraph links verify --assert-coverage` evaluates the same
+rules against the anchors a crawler **actually receives**. Only same-origin
+body-region anchors count — nav, header, and footer links are chrome — which is
+the served analogue of `check` counting `related` edges alone. The rule's target
+universe is still the declared graph's sitemap-eligible pages.
+
+```bash
+pagegraph links verify https://example.com --assert-coverage
+pagegraph links verify --rendered .seo/rendered.json --assert-coverage --json | jq
+```
+
+The command exits non-zero when any rule is unmet, and **refuses to assert** (also
+non-zero) rather than reporting a false pass when the crawl outran `--limit`, a
+body hit `--max-body-bytes`, the config declares no `coverage`, or the artifact's
+origin differs from `seo.config.ts`. Under `--assert-coverage` the report gains a
+`coverage` block (`{ rules, ok, violations }`); the default `--json` summary is
+unchanged.
 
 ### Propose contextual links
 
@@ -379,6 +434,10 @@ rule that matches no sitemap-eligible page is itself a violation.
 ```bash
 pagegraph check --require-inbound "/pricing=2" --require-inbound "/features/*=1"
 ```
+
+`pagegraph check` asserts the policy on the declared graph. To prove the links are
+actually served, assert the same policy on the rendered graph — see
+[Assert coverage on the rendered graph](#assert-coverage-on-the-rendered-graph).
 
 ### Audit any website
 

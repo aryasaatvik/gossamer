@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildRenderedGraph,
+  decodeRenderedEdgeArtifact,
   diffLinkGraph,
   extractAnchors,
   normalizePath,
+  renderedGraphFromEdges,
 } from "../../src/core/links";
 
 describe("extractAnchors", () => {
@@ -194,5 +196,98 @@ describe("diffLinkGraph", () => {
     // Declared paths are normalized (trailing slash stripped) before matching.
     expect(diff.declaredNotRendered).toEqual([{ from: "/", to: "/declared-only" }]);
     expect(diff.renderedNotDeclared).toEqual([{ from: "/", to: "/rendered-only" }]);
+  });
+});
+
+describe("renderedGraphFromEdges", () => {
+  const edges = [
+    { from: "/", to: "/compare", region: "body" as const },
+    { from: "/", to: "/nav", region: "nav" as const },
+    { from: "/compare", to: "/", region: "body" as const },
+    { from: "/compare", to: "/orphan", region: "footer" as const },
+  ];
+
+  it("rebuilds the same contextual split, depth, and orphans as a crawl", () => {
+    const graph = renderedGraphFromEdges(edges, "/");
+    expect(graph.contextualEdges.map((edge) => `${edge.from}->${edge.to}`)).toEqual([
+      "/->/compare",
+      "/compare->/",
+    ]);
+    expect(graph.depthByPath.get("/compare")).toBe(1);
+    expect(graph.depthByPath.get("/orphan")).toBe(2);
+    expect(graph.maxDepth).toBe(2);
+    expect(graph.orphans).toEqual([]);
+  });
+
+  it("normalizes full URLs, trailing slashes, queries, and hashes to path keys", () => {
+    const graph = renderedGraphFromEdges([
+      { from: "https://example.com/", to: "https://example.com/a/?ref=1", region: "body" },
+      { from: "/a#top", to: "/", region: "body" },
+    ]);
+    expect(graph.edges.map((edge) => `${edge.from}->${edge.to}`)).toEqual(["/->/a", "/a->/"]);
+  });
+});
+
+describe("decodeRenderedEdgeArtifact", () => {
+  const artifact = {
+    kind: "links-rendered",
+    schemaVersion: 1,
+    origin: "https://example.com",
+    seed: "https://example.com/",
+    crawl: {
+      pages: 2,
+      root: "/",
+      limit: 100,
+      truncated: false,
+      bodyTruncated: false,
+      truncatedPages: [],
+    },
+    edges: [
+      { from: "/", to: "/about", region: "body" },
+      { from: "/about", to: "/", region: "nav" },
+    ],
+  };
+
+  it("preserves provenance and region", () => {
+    expect(decodeRenderedEdgeArtifact(artifact)).toEqual(artifact);
+  });
+
+  it("defaults an omitted region to body and an omitted root to the seed path", () => {
+    const decoded = decodeRenderedEdgeArtifact({
+      schemaVersion: 1,
+      origin: "https://example.com",
+      seed: "https://example.com/en/",
+      crawl: { pages: 1, limit: 10, truncated: false },
+      edges: [{ from: "/", to: "/en" }],
+    });
+    expect(decoded.edges).toEqual([{ from: "/", to: "/en", region: "body" }]);
+    expect(decoded.crawl.root).toBe("/en");
+    expect(decoded.crawl.truncatedPages).toEqual([]);
+    expect(decoded.crawl.bodyTruncated).toBe(false);
+  });
+
+  it("rejects an unsupported schema version", () => {
+    expect(() => decodeRenderedEdgeArtifact({ ...artifact, schemaVersion: 2 })).toThrow(
+      /schemaVersion/,
+    );
+  });
+
+  it("rejects a missing origin or crawl provenance", () => {
+    expect(() => decodeRenderedEdgeArtifact({ ...artifact, origin: "" })).toThrow(/origin/);
+    expect(() =>
+      decodeRenderedEdgeArtifact({
+        ...artifact,
+        crawl: { pages: 1, truncated: false },
+      }),
+    ).toThrow(/crawl\.limit/);
+  });
+
+  it("rejects an edge with a bad region or missing endpoints", () => {
+    expect(() =>
+      decodeRenderedEdgeArtifact({ ...artifact, edges: [{ from: "/", to: "/x", region: "main" }] }),
+    ).toThrow(/region/);
+    expect(() => decodeRenderedEdgeArtifact({ ...artifact, edges: [{ from: "/" }] })).toThrow(
+      /string `from` and `to`/,
+    );
   });
 });

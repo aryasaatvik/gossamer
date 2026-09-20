@@ -264,8 +264,25 @@ export interface LinksVerifyReport {
     readonly declaredNotRendered: ReadonlyArray<SimpleEdge>;
     readonly renderedNotDeclared: ReadonlyArray<SimpleEdge>;
   } | null;
+  /**
+   * Rendered coverage assertion, present only under `--assert-coverage`. It is
+   * omitted otherwise so the default `--json` summary is unchanged.
+   */
+  readonly coverage?: LinksCoverageReport | undefined;
   /** Non-fatal notes: body truncation, an unusable config, or an origin mismatch. */
   readonly warnings: ReadonlyArray<string>;
+}
+
+/**
+ * The outcome of asserting `seo.config.ts` coverage against the rendered graph:
+ * every rule that matched a sitemap-eligible declared page, evaluated over the
+ * anchors a crawler actually received.
+ */
+export interface LinksCoverageReport {
+  /** Number of coverage rules asserted. */
+  readonly rules: number;
+  readonly ok: boolean;
+  readonly violations: ReadonlyArray<Violation>;
 }
 
 const edgeLine = (edge: SimpleEdge): string => `    ${edge.from} → ${edge.to}`;
@@ -303,6 +320,21 @@ export const renderLinksReport = (report: LinksVerifyReport): string => {
     for (const edge of report.declared.declaredNotRendered) lines.push(edgeLine(edge));
     lines.push(`  rendered not declared  ${report.declared.renderedNotDeclared.length}`);
     for (const edge of report.declared.renderedNotDeclared) lines.push(edgeLine(edge));
+  }
+
+  if (report.coverage !== undefined) {
+    const { coverage } = report;
+    lines.push("", `Rendered coverage (${coverage.rules} rule(s)):`);
+    if (coverage.ok) {
+      lines.push("  ✓ every coverage rule is satisfied by the served anchors.");
+    } else {
+      for (const violation of coverage.violations) {
+        const where = violation.path ? `  ${violation.path}` : "";
+        lines.push(`  ✗ [${violation.rule}]${where}`);
+        lines.push(`      ${violation.message}`);
+        if (violation.fix) lines.push(`      fix: ${violation.fix}`);
+      }
+    }
   }
 
   if (crawl.failures.length > 0) {
