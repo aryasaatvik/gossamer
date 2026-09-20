@@ -309,6 +309,7 @@ pagegraph links verify <url> --assert-coverage  # also assert seo.config.ts cove
 pagegraph links verify <url> --emit-rendered <file>  # save the rendered edge set
 pagegraph links candidates      # propose contextual links from the declared graph
 pagegraph links decide <file>   # answer typed link questions with Jev (TYPESAFE_API_KEY)
+pagegraph decide <family> [<file>]  # answer a decision batch with Jev (TYPESAFE_API_KEY)
 pagegraph sitemap               # print sitemap.xml
 pagegraph robots                # print robots.txt
 ```
@@ -423,6 +424,32 @@ bundled into the CLI. The API key is read from the **`TYPESAFE_API_KEY` environm
 is deliberately not a `seo.config.ts` field, so keys never live in the repo; `seo.config.ts` carries
 non-secret decision settings only. Without a key the command exits 1 with a clear message and an
 empty stdout.
+
+### The decision runner
+
+`pagegraph decide <family>` generalizes Jev decisions over a batch. Each input answers every decision
+for that input in one provider call; confident answers resolve and anything inside the confidence
+band goes to a `review` bucket. Nothing is applied automatically — the report is the end product.
+
+```bash
+pagegraph decide <family> inputs.json --json | jq
+cat inputs.json | pagegraph decide <family> --threshold 0.9
+```
+
+A batch is a JSON array, a `{ "inputs": [...] }` envelope, or JSONL (one input per line), from a file
+argument or stdin. Flags are shared across families:
+
+| Flag              | Default     | Meaning                                                       |
+| ----------------- | ----------- | ------------------------------------------------------------- |
+| `--json`          | false       | Emit the versioned report as JSON on stdout                    |
+| `--model <id>`    | `jev-latest` | TypeSafe System One model (`jev-latest`, `jev-preview`, …)     |
+| `--threshold <t>` | `0.7`       | Confidence boundary; `(1−t, t)` is the review band             |
+| `--concurrency <n>` | `4`       | In-flight decision calls                                       |
+| `--cache <dir>`   | —           | Reuse model answers by input hash                              |
+| `--review-out <file>` | —       | Write only the below-threshold records to JSON                 |
+
+`pagegraph decide links` is the links family alias of `pagegraph links decide` (see
+[Decide with Jev](#decide-with-jev)); it accepts the same candidate array.
 
 ### Contextual-link coverage
 
