@@ -23,6 +23,7 @@ import { dirname, resolve } from "node:path";
 
 import { TypeSafeClient, TypeSafeDecisionModel } from "@effect/ai-typesafe";
 
+import { serpFamily } from "../../decide/families/serp";
 import { decodeInputsText } from "../../decide/inputs";
 import { decodeFamilyInputs, runDecisions, type DecisionFamily } from "../../decide/run";
 import { renderDecideReport } from "../../decide/render";
@@ -245,6 +246,36 @@ const decideCommand = (config: {
     Command.withHandler((options) => config.run(options)),
   );
 
+/** Build a family subcommand from its family and help text. */
+const familySubcommand = <Input>(
+  family: DecisionFamily<Input>,
+  config: {
+    readonly description: string;
+    readonly examples: ReadonlyArray<{ readonly command: string; readonly description: string }>;
+  },
+) =>
+  decideCommand({
+    name: family.name,
+    description: config.description,
+    examples: config.examples,
+    run: (options) => runFamily(family, options),
+  });
+
+const serpCommand = familySubcommand(serpFamily, {
+  description:
+    "Classify the SERP format and score our page's fit, intent, and title (aligned | mismatch | review)",
+  examples: [
+    {
+      command: "pagegraph decide serp serp.json",
+      description: "Decide a saved SERP snapshot and print the reviewable plan",
+    },
+    {
+      command: "cat serp.json | pagegraph decide serp --json | jq",
+      description: "Read the SERP batch from stdin and emit versioned JSON",
+    },
+  ],
+});
+
 const linksDecideCommand = decideCommand({
   name: "links",
   description: "Answer the links family: real reason and anchor present per candidate",
@@ -274,5 +305,5 @@ export const decideCommandGroup = Command.make("decide").pipe(
       description: "Decide a link-candidate batch and emit versioned JSON",
     },
   ]),
-  Command.withSubcommands([linksDecideCommand]),
+  Command.withSubcommands([serpCommand, linksDecideCommand]),
 );

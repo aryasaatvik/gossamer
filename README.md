@@ -451,6 +451,31 @@ argument or stdin. Flags are shared across families:
 `pagegraph decide links` is the links family alias of `pagegraph links decide` (see
 [Decide with Jev](#decide-with-jev)); it accepts the same candidate array.
 
+#### `decide serp` — is our page the shape this SERP rewards?
+
+Input: one saved results-page snapshot per input.
+
+```json
+{
+  "query": "best email api",
+  "ourPage": {
+    "url": "https://example.com/email-api",
+    "title": "Email API for developers",
+    "kind": "page",
+    "firstWords": "Send transactional email from your product."
+  },
+  "serpItems": [
+    { "type": "organic", "rank": 1, "domain": "a.example", "title": "Best email APIs", "snippet": "Compare" }
+  ]
+}
+```
+
+| Verdict    | Meaning                                                            |
+| ---------- | ------------------------------------------------------------------ |
+| `aligned`  | Intent and format are both confidently positive.                   |
+| `mismatch` | At least one of intent/format is confidently wrong.                |
+| `review`   | Any answer (`ourFormatFit`, `intentMatch`, `titlePatternMatch`) is inside the band. |
+
 ### Contextual-link coverage
 
 Declare a contextual-link coverage policy in `seo.config.ts` (a `coverage` array
