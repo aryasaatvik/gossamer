@@ -11,6 +11,8 @@ const cli = fileURLToPath(new URL("../../src/cli/bin.ts", import.meta.url));
 
 let server: Server;
 let target: string;
+let brokenServer: Server;
+let brokenTarget: string;
 
 const page = (body: string) => `<!doctype html><html><body>${body}</body></html>`;
 
@@ -40,20 +42,52 @@ beforeAll(async () => {
         response.end("not found");
     }
   });
-  await new Promise<void>((resolve, reject) => {
-    server.once("error", reject);
-    server.listen(0, "127.0.0.1", resolve);
+  // A site with a dead internal link: /missing is discovered but never renders,
+  // so its outgoing anchors are absent from the crawl.
+  brokenServer = createServer((request, response) => {
+    if (request.url === "/") {
+      response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+      response.end(page(`<main><a href="/ok">Ok</a><a href="/missing">Missing</a></main>`));
+      return;
+    }
+    if (request.url === "/ok") {
+      response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+      response.end(page(`<main>Ok</main>`));
+      return;
+    }
+    response.writeHead(404, { "content-type": "text/plain" });
+    response.end("not found");
   });
+  await Promise.all([
+    new Promise<void>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(0, "127.0.0.1", resolve);
+    }),
+    new Promise<void>((resolve, reject) => {
+      brokenServer.once("error", reject);
+      brokenServer.listen(0, "127.0.0.1", resolve);
+    }),
+  ]);
   const address = server.address();
   if (address === null || typeof address === "string") throw new Error("Fixture did not bind");
   target = `http://127.0.0.1:${address.port}/`;
+  const brokenAddress = brokenServer.address();
+  if (brokenAddress === null || typeof brokenAddress === "string") {
+    throw new Error("Broken fixture did not bind");
+  }
+  brokenTarget = `http://127.0.0.1:${brokenAddress.port}/`;
 });
 
 const temporaryDirectories: Array<string> = [];
 
 afterAll(async () => {
-  await new Promise<void>((resolve, reject) =>
-    server.close((error) => (error ? reject(error) : resolve())),
+  await Promise.all(
+    [server, brokenServer].map(
+      (instance) =>
+        new Promise<void>((resolve, reject) =>
+          instance.close((error) => (error ? reject(error) : resolve())),
+        ),
+    ),
   );
   for (const directory of temporaryDirectories.splice(0)) {
     rmSync(directory, { recursive: true, force: true });
@@ -146,6 +180,7 @@ describe("pagegraph links verify — rendered-edge artifact", () => {
       readonly origin: string;
       readonly seed: string;
       readonly crawl: Record<string, unknown>;
+      readonly nodes: ReadonlyArray<string>;
       readonly edges: ReadonlyArray<{ from: string; to: string; region: string }>;
     };
     expect(artifact).toMatchObject({
@@ -153,8 +188,9 @@ describe("pagegraph links verify — rendered-edge artifact", () => {
       schemaVersion: 1,
       origin: target.replace(/\/$/, ""),
       seed: target,
-      crawl: { pages: 3, limit: 100, truncated: false, root: "/" },
+      crawl: { pages: 3, limit: 100, truncated: false, root: "/", failures: [] },
     });
+    expect([...artifact.nodes].sort()).toEqual(["/", "/about", "/pricing"]);
     // Every crawled edge is present, and the nav/body distinction survives.
     const pricing = artifact.edges.filter((edge) => edge.to === "/pricing");
     expect(pricing.map((edge) => edge.region).sort()).toEqual(["body", "body", "nav"]);
@@ -277,5 +313,37 @@ describe("pagegraph links verify — rendered-edge artifact", () => {
     expect(result.status).toBe(1);
     expect(result.stdout).toBe("");
     expect(result.stderr).toContain("Could not read rendered artifact");
+  }, 20_000);
+
+  it("records failed pages in the artifact and refuses to assert on them", async () => {
+    const directory = configDirectory(
+      configFor(new URL(brokenTarget).origin, `coverage: [{ path: "/pricing", minInbound: 1 }],`),
+    );
+    const artifactPath = join(directory, "rendered.json");
+
+    const emitted = await runVerify(
+      [brokenTarget, "--allow-private", "--emit-rendered", artifactPath],
+      directory,
+    );
+    expect(emitted.status).toBe(0);
+    const artifact = JSON.parse(readFileSync(artifactPath, "utf8")) as {
+      readonly crawl: { readonly failures: ReadonlyArray<{ url: string; error: string }> };
+    };
+    expect(artifact.crawl.failures).toHaveLength(1);
+    expect(artifact.crawl.failures[0]?.url).toContain("/missing");
+
+    const crawled = await runVerify(
+      [brokenTarget, "--allow-private", "--assert-coverage", "--json"],
+      directory,
+    );
+    expect(crawled.status).toBe(1);
+    expect(crawled.stderr).toContain("failed to fetch");
+
+    const replayed = await runVerify(
+      ["--rendered", artifactPath, "--assert-coverage", "--json"],
+      directory,
+    );
+    expect(replayed.status).toBe(1);
+    expect(replayed.stderr).toContain("failed to fetch");
   }, 20_000);
 });

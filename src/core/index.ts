@@ -62,6 +62,7 @@ export type {
   LinkGraphDiff,
   RenderedEdgeArtifact,
   RenderedEdgeArtifactCrawl,
+  RenderedEdgeFailure,
   RenderedGraph,
   RenderedPage,
   SimpleEdge,

@@ -112,7 +112,11 @@ const analyzeDeclared = (
   crawlOrigin: string,
   renderedEdges: ReadonlyArray<LinkEdge>,
   assertCoverage: boolean,
-  crawlState: { readonly truncated: boolean; readonly bodyTruncated: boolean },
+  crawlState: {
+    readonly truncated: boolean;
+    readonly bodyTruncated: boolean;
+    readonly failures: number;
+  },
 ): Effect.Effect<DeclaredAnalysis, SeoCliError> =>
   Effect.gen(function* () {
     if (assertCoverage) {
@@ -120,6 +124,11 @@ const analyzeDeclared = (
         return yield* new SeoCliError({
           message:
             "Refusing to assert rendered coverage on a truncated crawl; re-run with a higher --limit.",
+        });
+      }
+      if (crawlState.failures > 0) {
+        return yield* new SeoCliError({
+          message: `Refusing to assert rendered coverage: ${crawlState.failures} page(s) failed to fetch, so their anchors are missing.`,
         });
       }
       if (crawlState.bodyTruncated) {
@@ -321,13 +330,13 @@ const linksVerifyCommand = Command.make("verify", {
         }
         origin = artifact.origin;
         seed = artifact.seed;
-        graph = renderedGraphFromEdges(artifact.edges, artifact.crawl.root);
+        graph = renderedGraphFromEdges(artifact.edges, artifact.crawl.root, artifact.nodes);
         renderedEdges = artifact.edges;
         crawlReport = {
           pages: artifact.crawl.pages,
           limit: artifact.crawl.limit,
           truncated: artifact.crawl.truncated,
-          failures: [],
+          failures: artifact.crawl.failures,
           bodyTruncated: artifact.crawl.bodyTruncated,
           truncatedPages: artifact.crawl.truncatedPages,
         };
@@ -381,7 +390,9 @@ const linksVerifyCommand = Command.make("verify", {
               truncated: crawl.truncated,
               bodyTruncated: crawl.truncatedBodies.length > 0,
               truncatedPages: crawl.truncatedBodies,
+              failures: crawl.failures,
             },
+            nodes: graph.nodes,
             edges: graph.internalEdges,
           };
           yield* writeRenderedArtifact(emitPath, artifact);
@@ -398,6 +409,7 @@ const linksVerifyCommand = Command.make("verify", {
       const analysis = yield* analyzeDeclared(origin, renderedEdges, options.assertCoverage, {
         truncated: crawlReport.truncated,
         bodyTruncated: crawlReport.bodyTruncated,
+        failures: crawlReport.failures.length,
       });
       warnings.push(...analysis.warnings);
       const diff =

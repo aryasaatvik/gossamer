@@ -26,6 +26,8 @@ export interface LinkEdge {
 }
 
 export interface RenderedGraph {
+  /** Every same-origin page path the crawl rendered, in first-seen order. */
+  readonly nodes: ReadonlyArray<string>;
   readonly edges: ReadonlyArray<LinkEdge>;
   readonly internalEdges: ReadonlyArray<LinkEdge>;
   /** Same-origin body-region edges: the contextual surface. */
@@ -195,7 +197,15 @@ const graphFromEdges = (
   for (const value of depthByPath.values()) {
     if (maxDepth === null || value > maxDepth) maxDepth = value;
   }
-  return { edges, internalEdges, contextualEdges, orphans, depthByPath, maxDepth };
+  return {
+    nodes: [...nodes],
+    edges,
+    internalEdges,
+    contextualEdges,
+    orphans,
+    depthByPath,
+    maxDepth,
+  };
 };
 
 /**
@@ -253,23 +263,26 @@ const pathKeyOf = (value: string): string => {
 /**
  * Rebuild a {@link RenderedGraph} from a rendered-edge set alone — the artifact
  * `pagegraph links verify --emit-rendered` writes. Path keys are normalized the
- * same way as a crawl, so an edge list and a live crawl of the same pages yield
- * the same orphan set, depth, and contextual split. `region` is preserved.
+ * same way as a crawl, and `nodes` carries the rendered page paths the artifact
+ * recorded, so an edge-less page (a redirect target with no internal links) stays
+ * a node and its orphan/depth report survives replay. Without `nodes` the node set
+ * falls back to the edge endpoints.
  */
 export const renderedGraphFromEdges = (
   edges: ReadonlyArray<LinkEdge>,
   root: string = "/",
+  nodes: ReadonlyArray<string> = [],
 ): RenderedGraph => {
-  const nodes = new Set<string>();
+  const nodeSet = new Set(nodes.map(pathKeyOf));
   const kept: Array<LinkEdge> = [];
   for (const edge of edges) {
     const from = pathKeyOf(edge.from);
     const to = pathKeyOf(edge.to);
-    nodes.add(from);
-    nodes.add(to);
+    nodeSet.add(from);
+    nodeSet.add(to);
     kept.push({ from, to, region: edge.region });
   }
-  return graphFromEdges(nodes, kept, root);
+  return graphFromEdges(nodeSet, kept, root);
 };
 
 export interface SimpleEdge {
@@ -320,6 +333,12 @@ export const diffLinkGraph = (
   };
 };
 
+/** A page the crawl could not render; its outgoing anchors are absent. */
+export interface RenderedEdgeFailure {
+  readonly url: string;
+  readonly error: string;
+}
+
 /**
  * Provenance for a rendered-edge artifact: enough to trust the edges and to
  * refuse a gate that would assert on an incomplete crawl. `root` is the seed's
@@ -339,14 +358,16 @@ export interface RenderedEdgeArtifactCrawl {
   readonly bodyTruncated: boolean;
   /** URLs whose captured body was cut; anchors past the cutoff are missing. */
   readonly truncatedPages: ReadonlyArray<string>;
+  /** Pages that failed to fetch; their outgoing anchors are missing. */
+  readonly failures: ReadonlyArray<RenderedEdgeFailure>;
 }
 
 /**
  * The stable, `decodeRenderedEdges`-compatible artifact `pagegraph links verify
  * --emit-rendered` writes and `--rendered` reads. It carries the raw served edges
- * (with `region`) plus the provenance a coverage gate needs to decide whether the
- * crawl is trustworthy, so one crawl can be asserted repeatedly without
- * re-fetching.
+ * (with `region`), the rendered page paths, and the provenance a coverage gate
+ * needs to decide whether the crawl is trustworthy, so one crawl can be asserted
+ * repeatedly without re-fetching.
  */
 export interface RenderedEdgeArtifact {
   readonly kind: "links-rendered";
@@ -354,11 +375,15 @@ export interface RenderedEdgeArtifact {
   readonly origin: string;
   readonly seed: string;
   readonly crawl: RenderedEdgeArtifactCrawl;
+  /** Normalized paths of every rendered page — replay's node set. */
+  readonly nodes: ReadonlyArray<string>;
   readonly edges: ReadonlyArray<LinkEdge>;
 }
 
 /** The rendered-edge artifact schema this package writes and accepts. */
 export const RENDERED_EDGE_ARTIFACT_SCHEMA_VERSION = 1 as const;
+
+const ARTIFACT_KIND = "links-rendered";
 
 const REGIONS: ReadonlySet<string> = new Set(["nav", "footer", "header", "body"]);
 
@@ -383,9 +408,41 @@ const decodeArtifactEdges = (input: unknown): ReadonlyArray<LinkEdge> => {
   });
 };
 
-const requiredString = (value: unknown, field: string): string => {
+const decodeArtifactNodes = (input: unknown): ReadonlyArray<string> => {
+  if (input === undefined) return [];
+  if (!Array.isArray(input) || !input.every((path) => typeof path === "string")) {
+    throw new Error("rendered-edge artifact `nodes` must be an array of paths");
+  }
+  return input;
+};
+
+const decodeArtifactFailures = (input: unknown): ReadonlyArray<RenderedEdgeFailure> => {
+  if (input === undefined) return [];
+  if (!Array.isArray(input)) {
+    throw new Error("rendered-edge artifact `crawl.failures` must be an array");
+  }
+  return input.map((item) => {
+    if (item === null || typeof item !== "object") {
+      throw new Error("each artifact failure must be an object with string `url` and `error`");
+    }
+    const { url, error } = item as { url?: unknown; error?: unknown };
+    if (typeof url !== "string" || typeof error !== "string") {
+      throw new Error("each artifact failure must have string `url` and `error`");
+    }
+    return { url, error };
+  });
+};
+
+const requiredAbsoluteUrl = (value: unknown, field: string): string => {
   if (typeof value !== "string" || value === "") {
     throw new Error(`rendered-edge artifact must carry a non-empty string \`${field}\``);
+  }
+  try {
+    void new URL(value);
+  } catch {
+    throw new Error(
+      `rendered-edge artifact \`${field}\` must be an absolute URL (received ${JSON.stringify(value)})`,
+    );
   }
   return value;
 };
@@ -401,22 +458,27 @@ const requiredInteger = (value: unknown, field: string, minimum: number): number
 
 /**
  * Decode a rendered-edge artifact from user input. Throws on any other shape —
- * this is user input, not a provider payload. `root`, `bodyTruncated`, and
- * `truncatedPages` are optional so a hand-written edge dump that only carries
- * provenance can still be replayed.
+ * this is user input, not a provider payload. `root`, `bodyTruncated`,
+ * `truncatedPages`, `failures`, and `nodes` are optional so a hand-written edge
+ * dump that only carries provenance can still be replayed.
  */
 export const decodeRenderedEdgeArtifact = (input: unknown): RenderedEdgeArtifact => {
   if (input === null || typeof input !== "object") {
     throw new Error("rendered-edge artifact must be an object");
   }
   const value = input as Record<string, unknown>;
+  if (value["kind"] !== ARTIFACT_KIND) {
+    throw new Error(
+      `rendered-edge artifact \`kind\` must be "${ARTIFACT_KIND}" (received ${JSON.stringify(value["kind"])})`,
+    );
+  }
   if (value["schemaVersion"] !== RENDERED_EDGE_ARTIFACT_SCHEMA_VERSION) {
     throw new Error(
       `unsupported rendered-edge artifact schemaVersion: ${JSON.stringify(value["schemaVersion"])}`,
     );
   }
-  const origin = requiredString(value["origin"], "origin");
-  const seed = requiredString(value["seed"], "seed");
+  const origin = requiredAbsoluteUrl(value["origin"], "origin");
+  const seed = requiredAbsoluteUrl(value["seed"], "seed");
   const crawl = value["crawl"];
   if (crawl === null || typeof crawl !== "object") {
     throw new Error("rendered-edge artifact must carry a `crawl` object");
@@ -437,7 +499,7 @@ export const decodeRenderedEdgeArtifact = (input: unknown): RenderedEdgeArtifact
     throw new Error("rendered-edge artifact `crawl.truncated` must be a boolean");
   }
   return {
-    kind: "links-rendered",
+    kind: ARTIFACT_KIND,
     schemaVersion: RENDERED_EDGE_ARTIFACT_SCHEMA_VERSION,
     origin,
     seed,
@@ -448,7 +510,9 @@ export const decodeRenderedEdgeArtifact = (input: unknown): RenderedEdgeArtifact
       truncated: provenance["truncated"],
       bodyTruncated: bodyTruncated === true,
       truncatedPages: (truncatedPages as ReadonlyArray<string> | undefined) ?? [],
+      failures: decodeArtifactFailures(provenance["failures"]),
     },
+    nodes: decodeArtifactNodes(value["nodes"]),
     edges: decodeArtifactEdges(value["edges"]),
   };
 };

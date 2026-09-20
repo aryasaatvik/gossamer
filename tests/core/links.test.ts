@@ -226,6 +226,18 @@ describe("renderedGraphFromEdges", () => {
     ]);
     expect(graph.edges.map((edge) => `${edge.from}->${edge.to}`)).toEqual(["/->/a", "/a->/"]);
   });
+
+  it("keeps an edge-less rendered page as a node when its path set is supplied", () => {
+    // A redirect target with no internal links: the live crawl knows it rendered,
+    // but the edge list alone cannot see it.
+    const graph = renderedGraphFromEdges(
+      [{ from: "/", to: "/leaf", region: "nav" }],
+      "/",
+      ["/", "/leaf", "/canonical"],
+    );
+    expect(graph.nodes).toEqual(["/", "/leaf", "/canonical"]);
+    expect(graph.orphans).toEqual(["/canonical"]);
+  });
 });
 
 describe("decodeRenderedEdgeArtifact", () => {
@@ -241,7 +253,9 @@ describe("decodeRenderedEdgeArtifact", () => {
       truncated: false,
       bodyTruncated: false,
       truncatedPages: [],
+      failures: [],
     },
+    nodes: ["/", "/about"],
     edges: [
       { from: "/", to: "/about", region: "body" },
       { from: "/about", to: "/", region: "nav" },
@@ -254,6 +268,7 @@ describe("decodeRenderedEdgeArtifact", () => {
 
   it("defaults an omitted region to body and an omitted root to the seed path", () => {
     const decoded = decodeRenderedEdgeArtifact({
+      kind: "links-rendered",
       schemaVersion: 1,
       origin: "https://example.com",
       seed: "https://example.com/en/",
@@ -264,12 +279,26 @@ describe("decodeRenderedEdgeArtifact", () => {
     expect(decoded.crawl.root).toBe("/en");
     expect(decoded.crawl.truncatedPages).toEqual([]);
     expect(decoded.crawl.bodyTruncated).toBe(false);
+    expect(decoded.crawl.failures).toEqual([]);
+    expect(decoded.nodes).toEqual([]);
   });
 
   it("rejects an unsupported schema version", () => {
     expect(() => decodeRenderedEdgeArtifact({ ...artifact, schemaVersion: 2 })).toThrow(
       /schemaVersion/,
     );
+  });
+
+  it("rejects a missing or wrong kind discriminator", () => {
+    expect(() => decodeRenderedEdgeArtifact({ ...artifact, kind: "links-verify" })).toThrow(/kind/);
+    expect(() => decodeRenderedEdgeArtifact({ ...artifact, kind: undefined })).toThrow(/kind/);
+  });
+
+  it("rejects a non-URL origin or seed", () => {
+    expect(() => decodeRenderedEdgeArtifact({ ...artifact, origin: "not a URL" })).toThrow(
+      /absolute URL/,
+    );
+    expect(() => decodeRenderedEdgeArtifact({ ...artifact, seed: "" })).toThrow(/seed/);
   });
 
   it("rejects a missing origin or crawl provenance", () => {
@@ -289,5 +318,14 @@ describe("decodeRenderedEdgeArtifact", () => {
     expect(() => decodeRenderedEdgeArtifact({ ...artifact, edges: [{ from: "/" }] })).toThrow(
       /string `from` and `to`/,
     );
+  });
+
+  it("rejects a malformed failure entry", () => {
+    expect(() =>
+      decodeRenderedEdgeArtifact({
+        ...artifact,
+        crawl: { ...artifact.crawl, failures: [{ url: "/x" }] },
+      }),
+    ).toThrow(/string `url` and `error`/);
   });
 });

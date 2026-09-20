@@ -354,7 +354,9 @@ and the provenance a gate needs to trust it:
     "truncated": false,
     "bodyTruncated": false,
     "truncatedPages": [],
+    "failures": [],
   },
+  "nodes": ["/", "/pricing"],
   "edges": [{ "from": "/", "to": "/pricing", "region": "body" }],
 }
 ```
@@ -377,10 +379,10 @@ pagegraph links verify --rendered .seo/rendered.json --assert-coverage --json | 
 
 The command exits non-zero when any rule is unmet, and **refuses to assert** (also
 non-zero) rather than reporting a false pass when the crawl outran `--limit`, a
-body hit `--max-body-bytes`, the config declares no `coverage`, or the artifact's
-origin differs from `seo.config.ts`. Under `--assert-coverage` the report gains a
-`coverage` block (`{ rules, ok, violations }`); the default `--json` summary is
-unchanged.
+page failed to fetch (its anchors are missing), a body hit `--max-body-bytes`, the
+config declares no `coverage`, or the artifact's origin differs from
+`seo.config.ts`. Under `--assert-coverage` the report gains a `coverage` block
+(`{ rules, ok, violations }`); the default `--json` summary is unchanged.
 
 ### Propose contextual links
 
