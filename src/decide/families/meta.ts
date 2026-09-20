@@ -92,6 +92,9 @@ export const validateMetaInput = (input: MetaInput): string | undefined => {
   if (long !== undefined) {
     return `decide meta candidate id exceeds ${MAX_LABEL_LENGTH} characters: ${long.id.slice(0, 32)}…`;
   }
+  if (new Set(input.candidates.map((candidate) => candidate.id)).size !== input.candidates.length) {
+    return "decide meta candidate ids must be unique: they become provider labels.";
+  }
   return undefined;
 };
 

@@ -95,6 +95,18 @@ describe("validateMetaInput", () => {
       }),
     ).toContain("exceeds");
   });
+
+  it("rejects duplicate candidate ids", () => {
+    expect(
+      validateMetaInput({
+        ...sample,
+        candidates: [
+          { id: "a", title: "one", description: "d" },
+          { id: "a", title: "two", description: "d" },
+        ],
+      }),
+    ).toContain("unique");
+  });
 });
 
 describe("classifyMetaVerdict", () => {

@@ -65,6 +65,18 @@ describe("validateFitInput", () => {
       }),
     ).toContain("exceeds");
   });
+
+  it("rejects duplicate candidate ids", () => {
+    expect(
+      validateFitInput({
+        query: "x",
+        candidates: [
+          { id: "a", title: "one", excerpt: "e" },
+          { id: "a", title: "two", excerpt: "e" },
+        ],
+      }),
+    ).toContain("unique");
+  });
 });
 
 describe("classifyFitVerdict", () => {

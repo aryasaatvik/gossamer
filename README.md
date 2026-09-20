@@ -509,7 +509,7 @@ Input: one page per input, with the evidence the rubric reads.
 #### `decide fit` — which existing page should target this query?
 
 Input: a query plus the site's candidate pages. Candidate ids become the provider labels, so the
-family needs at least two candidates and ids at most 255 characters.
+family needs at least two candidates with unique ids of at most 255 characters.
 
 ```json
 {
@@ -531,7 +531,7 @@ family needs at least two candidates and ids at most 255 characters.
 #### `decide meta` — rank supplied title/description candidates
 
 Input: a page plus the candidates to rank. Drafting is out of scope — only the provided candidates
-are judged. Needs at least two candidates; ids at most 255 characters.
+are judged. Needs at least two candidates with unique ids of at most 255 characters.
 
 ```json
 {

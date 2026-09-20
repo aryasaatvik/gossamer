@@ -77,6 +77,9 @@ export const validateFitInput = (input: FitInput): string | undefined => {
   if (long !== undefined) {
     return `decide fit candidate id exceeds ${MAX_LABEL_LENGTH} characters: ${long.id.slice(0, 32)}…`;
   }
+  if (new Set(input.candidates.map((candidate) => candidate.id)).size !== input.candidates.length) {
+    return "decide fit candidate ids must be unique: they become provider labels.";
+  }
   return undefined;
 };
 
