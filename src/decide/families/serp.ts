@@ -124,6 +124,7 @@ export const serpFamily: DecisionFamily<SerpInput> = {
   name: "serp",
   input: SerpInput,
   definitionFor: () => SerpDecision,
-  inputRef: (input) => `query:${input.query}`,
+  // The page URL disambiguates two snapshots of the same query.
+  inputRef: (input) => `${input.ourPage.url} · query:${input.query}`,
   evaluate: (_input, answers, threshold) => classifySerpVerdict(answers, threshold),
 };

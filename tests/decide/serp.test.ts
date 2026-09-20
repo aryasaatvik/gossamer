@@ -93,7 +93,7 @@ describe("serp family run", () => {
 
     expect(report.family).toBe("serp");
     expect(report.verdicts).toEqual({ aligned: 1 });
-    expect(report.resolved[0]?.inputRef).toBe("query:best email api");
+    expect(report.resolved[0]?.inputRef).toBe("https://example.com/email-api · query:best email api");
     expect(report.resolved[0]?.answers).toMatchObject({
       serpFormat: { label: "comparison" },
       ourFormatFit: { probability: 0.9 },
@@ -121,7 +121,9 @@ describe("serp family run", () => {
     );
 
     expect(report.verdicts).toEqual({ aligned: 1, mismatch: 1, review: 1 });
-    expect(report.review.map((record) => record.inputRef)).toEqual(["query:uncertain"]);
+    expect(report.review.map((record) => record.inputRef)).toEqual([
+      "https://example.com/uncertain · query:uncertain",
+    ]);
   });
 
   it("exposes the input schema", () => {
