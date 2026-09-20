@@ -127,9 +127,19 @@ export const runDecisions = <Input>(
           const cached = options.cacheDir === undefined ? undefined : cacheGet(options.cacheDir, key);
           let answers: unknown;
           let usage: DecisionRecord["usage"];
+          let verdict: string | undefined;
           if (cached !== undefined) {
-            answers = cached;
-          } else {
+            // A corrupt or stale cache file must not abort the run. Evaluating
+            // the cached shape is the check: if the family cannot read it, fall
+            // through and ask the provider (which surfaces real bugs itself).
+            try {
+              verdict = options.family.evaluate(input, cached, options.threshold);
+              answers = cached;
+            } catch {
+              verdict = undefined;
+            }
+          }
+          if (verdict === undefined) {
             const response = yield* DecisionModel.decide(options.family.definitionFor(input), {
               input,
             });
@@ -139,8 +149,8 @@ export const runDecisions = <Input>(
               outputTokens: response.usage.outputTokens,
             };
             if (options.cacheDir !== undefined) cachePut(options.cacheDir, key, answers);
+            verdict = options.family.evaluate(input, answers, options.threshold);
           }
-          const verdict = options.family.evaluate(input, answers, options.threshold);
           return {
             decisionId: `${options.family.name}:${index}`,
             schemaVersion: 1,

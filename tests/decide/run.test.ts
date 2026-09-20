@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -210,6 +210,27 @@ describe("runDecisions", () => {
     );
     // Cached records carry no provider usage — the call never happened.
     expect(second.resolved.every((record) => record.usage === undefined)).toBe(true);
+  });
+
+  it("treats a malformed cache entry as a miss", async () => {
+    const cacheDir = temporaryDirectory();
+    const input = inputs[0]!;
+    const key = cacheKey("fake", "mock", inputHash(input));
+    writeFileSync(join(cacheDir, `${key}.json`), "{}\n", "utf8");
+
+    let calls = 0;
+    const report = await Effect.runPromise(
+      runDecisions({
+        family: fakeFamily,
+        inputs: [input],
+        model: "mock",
+        threshold: 0.7,
+        cacheDir,
+      }).pipe(Effect.provide(mockModel((state) => values[state.id]!, () => calls++))),
+    );
+
+    expect(calls).toBe(1);
+    expect(report.verdicts).toEqual({ accept: 1 });
   });
 
   it("returns an empty report for no inputs", async () => {

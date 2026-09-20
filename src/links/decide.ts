@@ -197,7 +197,12 @@ export const decideLinks = (
           const cached =
             options.cacheDir === undefined ? undefined : cacheGet(options.cacheDir, key);
           if (cached !== undefined) {
-            return toRecord(candidate, cached as LinkAnswers, options.threshold);
+            // A corrupt cache file is a miss, not a crashed batch.
+            try {
+              return toRecord(candidate, cached as LinkAnswers, options.threshold);
+            } catch {
+              /* fall through and ask the provider */
+            }
           }
           const { answers } = yield* DecisionModel.decide(LinkDecision, { input: candidate });
           if (options.cacheDir !== undefined) cachePut(options.cacheDir, key, answers);

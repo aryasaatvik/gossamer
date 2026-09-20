@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -7,6 +7,7 @@ import * as Layer from "effect/Layer";
 import { DecisionModel } from "effect/unstable/ai";
 import { afterAll, describe, expect, it } from "vitest";
 
+import { cacheKey, inputHash } from "../../src/decide/run";
 import { decideLinks, type LinkCandidate } from "../../src/links/decide";
 
 const probability = (value: number) => ({ _tag: "Probability" as const, probability: value });
@@ -85,5 +86,21 @@ describe("decideLinks cache", () => {
     );
     expect(other.calls).toBe(1);
     expect(otherReport.counts.skip).toBe(1);
+  });
+
+  it("treats a malformed cache entry as a miss", async () => {
+    const cacheDir = temporaryDirectory();
+    const key = cacheKey("links", "jev-latest", inputHash(candidates[0]!));
+    writeFileSync(join(cacheDir, `${key}.json`), "{}\n", "utf8");
+
+    const counter = { calls: 0 };
+    const report = await Effect.runPromise(
+      decideLinks(candidates, { model: "jev-latest", threshold: 0.7, cacheDir }).pipe(
+        Effect.provide(countingModel(() => ({ realReason: 0.9, anchorPresent: 0.1 }), counter)),
+      ),
+    );
+
+    expect(counter.calls).toBe(1);
+    expect(report.counts.recommend).toBe(1);
   });
 });
