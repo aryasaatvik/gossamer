@@ -23,6 +23,7 @@ import { dirname, resolve } from "node:path";
 
 import { TypeSafeClient, TypeSafeDecisionModel } from "@effect/ai-typesafe";
 
+import { authorityFamily } from "../../decide/families/authority";
 import { contentFamily } from "../../decide/families/content";
 import { fitFamily } from "../../decide/families/fit";
 import { metaFamily } from "../../decide/families/meta";
@@ -33,8 +34,8 @@ import { renderDecideReport } from "../../decide/render";
 import {
   decideLinks,
   decodeLinkCandidates,
+  DEFAULT_LINK_BUDGET,
   type LinkCandidate,
-  type LinksDecideReport,
 } from "../../links/decide";
 import { jsonFlag, printJson, printText, SeoCliError } from "../output";
 import { renderLinksDecideReport } from "../render";
@@ -82,6 +83,10 @@ const cacheFlag = Flag.String("cache").pipe(
 const reviewOutFlag = Flag.String("review-out").pipe(
   Flag.withDescription("Write only below-threshold records to this JSON file"),
   Flag.optional,
+);
+const budgetFlag = Flag.Int("budget").pipe(
+  Flag.withDescription("Keep only the top-K candidates per source by relevance"),
+  Flag.withDefault(DEFAULT_LINK_BUDGET),
 );
 
 /** Read the batch text from a file argument or stdin; a TTY with no file is an error. */
@@ -213,11 +218,24 @@ const parseLinks = (text: string): Effect.Effect<ReadonlyArray<LinkCandidate>, S
     catch: (cause) => new SeoCliError({ message: `Invalid candidates: ${messageOf(cause)}` }),
   });
 
+/** Flag values `decide links` receives: the shared set plus `--budget`. */
+interface LinksDecideOptions {
+  readonly file: Option.Option<string>;
+  readonly json: boolean;
+  readonly threshold: number;
+  readonly model: string;
+  readonly concurrency: number;
+  readonly cache: Option.Option<string>;
+  readonly reviewOut: Option.Option<string>;
+  readonly budget: number;
+}
+
 /** `decide links` — the links family alias over the legacy `links decide` report. */
-const runLinks = (options: DecideOptions): Effect.Effect<void, SeoCliError> =>
+const runLinks = (options: LinksDecideOptions): Effect.Effect<void, SeoCliError> =>
   Effect.gen(function* () {
     const threshold = yield* checkThreshold(options.threshold);
     const concurrency = yield* positive("concurrency", options.concurrency);
+    const budget = yield* positive("budget", options.budget);
     const text = yield* readInputsText(Option.getOrUndefined(options.file));
     const candidates = yield* parseLinks(text);
     yield* requireKey("links");
@@ -227,6 +245,7 @@ const runLinks = (options: DecideOptions): Effect.Effect<void, SeoCliError> =>
       threshold,
       concurrency,
       cacheDir: Option.getOrUndefined(options.cache),
+      budget,
     }).pipe(
       Effect.provide(typeSafeDecisionModel(options.model)),
       Effect.mapError(decisionErrorMessage),
@@ -338,21 +357,50 @@ const metaCommand = familySubcommand(metaFamily, {
   ],
 });
 
-const linksDecideCommand = decideCommand({
-  name: "links",
-  description: "Answer the links family: real reason and anchor present per candidate",
+const authorityCommand = familySubcommand(authorityFamily, {
+  description:
+    "Judge a link target's legitimacy, spam, and outreach worth, plus its fit (accept | spam | review)",
   examples: [
+    {
+      command: "pagegraph decide authority targets.json",
+      description: "Judge a batch of link targets and print the reviewable plan",
+    },
+    {
+      command: "cat targets.json | pagegraph decide authority --json | jq",
+      description: "Read the authority batch from stdin and emit versioned JSON",
+    },
+  ],
+});
+
+const linksDecideCommand = Command.make("links", {
+  file: decideFile,
+  json: jsonFlag,
+  threshold: decideThresholdFlag,
+  model: modelFlag,
+  concurrency: concurrencyFlag,
+  cache: cacheFlag,
+  reviewOut: reviewOutFlag,
+  budget: budgetFlag,
+}).pipe(
+  Command.withDescription(
+    "Answer the links family: real reason, anchor present, direction, and relevance per candidate",
+  ),
+  Command.withExamples([
     {
       command: "pagegraph decide links candidates.json",
       description: "Answer a candidate batch and print the reviewable plan",
     },
     {
+      command: "pagegraph decide links candidates.json --budget 2",
+      description: "Keep the top two candidates per source by relevance",
+    },
+    {
       command: "cat candidates.json | pagegraph decide links --json | jq",
       description: "Read candidates from stdin and emit versioned JSON",
     },
-  ],
-  run: runLinks,
-});
+  ]),
+  Command.withHandler((options) => runLinks(options)),
+);
 
 /**
  * `pagegraph decide` groups the decision families. Each family answers one batch
@@ -372,6 +420,7 @@ export const decideCommandGroup = Command.make("decide").pipe(
     contentCommand,
     fitCommand,
     metaCommand,
+    authorityCommand,
     linksDecideCommand,
   ]),
 );

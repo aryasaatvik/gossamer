@@ -34,6 +34,7 @@ import {
 import {
   decideLinks,
   decodeLinkCandidates,
+  DEFAULT_LINK_BUDGET,
   DEFAULT_LINK_THRESHOLD,
   type LinkCandidate,
   type LinksDecideReport,
@@ -479,6 +480,10 @@ const concurrencyFlag = Flag.Int("concurrency").pipe(
   Flag.withDescription("Maximum concurrent decision calls"),
   Flag.withDefault(4),
 );
+const budgetFlag = Flag.Int("budget").pipe(
+  Flag.withDescription("Keep only the top-K candidates per source by relevance"),
+  Flag.withDefault(DEFAULT_LINK_BUDGET),
+);
 
 const checkThreshold = (value: number): Effect.Effect<number, SeoCliError> =>
   Number.isFinite(value) && value > 0.5 && value < 1
@@ -532,9 +537,10 @@ const linksDecideCommand = Command.make("decide", {
   threshold: thresholdFlag,
   model: modelFlag,
   concurrency: concurrencyFlag,
+  budget: budgetFlag,
 }).pipe(
   Command.withDescription(
-    "Answer real-reason and anchor-present decisions for candidate links; below-threshold candidates go to review",
+    "Answer real-reason, anchor-present, direction, and relevance for candidate links; below-threshold candidates go to review",
   ),
   Command.withExamples([
     {
@@ -554,6 +560,7 @@ const linksDecideCommand = Command.make("decide", {
     Effect.fn("SeoCli.linksDecide")(function* (options) {
       const threshold = yield* checkThreshold(options.threshold);
       const concurrency = yield* positive("concurrency", options.concurrency);
+      const budget = yield* positive("budget", options.budget);
 
       const text = yield* readCandidatesText(Option.getOrUndefined(options.file));
       const candidates = yield* parseCandidates(text);
@@ -569,6 +576,7 @@ const linksDecideCommand = Command.make("decide", {
         model: options.model,
         threshold,
         concurrency,
+        budget,
       }).pipe(
         Effect.provide(typeSafeDecisionModel(options.model)),
         Effect.mapError(decisionErrorMessage),

@@ -409,13 +409,15 @@ pagegraph links candidates --decide
 
 ### Decide with Jev
 
-`pagegraph links decide` answers two typed questions per candidate — *does the source have a genuine
-reason to link to the destination?* and *is descriptive anchor text already in the copy?* — and
-routes anything inside the confidence band `(1−t, t)` to a `review` bucket instead of auto-applying.
+`pagegraph links decide` answers four decisions per candidate — *does the source have a genuine
+reason to link to the destination?*, *is descriptive anchor text already in the copy?*, *which
+direction deserves the link?*, and *how relevant is it?* — and routes anything inside the confidence
+band `(1−t, t)` to a `review` bucket instead of auto-applying. `--budget` (default 4) keeps only the
+top-K candidates per source by relevance.
 
 ```bash
 pagegraph links decide candidates.json --threshold 0.9
-pagegraph links decide candidates.json --threshold 0.9 --json | jq
+pagegraph links decide candidates.json --budget 2 --json | jq
 cat candidates.json | pagegraph links decide
 ```
 
@@ -549,6 +551,38 @@ are judged. Needs at least two candidates with unique ids of at most 255 charact
 | ------------- | ------------------------------------------------------------------------- |
 | `choose:<id>` | A candidate is confidently best with clear intent, length, category, and clickbait checks. |
 | `review`      | A concern or an uncertain pick; a human decides.                           |
+
+#### `decide authority` — is this a real link opportunity?
+
+Input: one link target per input.
+
+```json
+{
+  "domain": "blog.example",
+  "url": "https://blog.example/email-guide",
+  "anchor": "transactional email API",
+  "context": "We cover how a transactional email API works end to end.",
+  "targetPath": "/email-api",
+  "rd": 120,
+  "signals": ["editorial", "no-outbound-links"]
+}
+```
+
+| Verdict  | Meaning                                                                  |
+| -------- | ------------------------------------------------------------------------ |
+| `accept` | Legitimate, outreach-worthy, and a confident non-`none` fit.              |
+| `spam`   | Spam is confidently high.                                                |
+| `review` | Any probability is inside the band, or the fit is `none`/uncertain.       |
+
+`fit` classifies `directory | partner | editorial | community | none`.
+
+#### `decide links` — direction, relevance, and budget
+
+`pagegraph decide links` shares the links decisions (see [Decide with Jev](#decide-with-jev)) and
+adds `--budget <n>` (default 4): keep the top-K candidates per outbound page by `relevance`
+(`irrelevant | useful | essential`). `direction` classifies `a_to_b | b_to_a | both`; a record also
+carries the resulting `from`/`to` endpoints, so a `b_to_a` recommendation is reported — and
+budgeted — against the page the model actually chose to link *from*.
 
 ### Contextual-link coverage
 
