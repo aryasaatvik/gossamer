@@ -1,10 +1,10 @@
 core:changelogs:
-  - content: "---\npackages:\n  pagegraph:\n    type: minor\n---\n\n### Verify and plan contextual links\n\nAdd `pagegraph links`, three commands over the link graph:\n\n- `links verify <url>` crawls served HTML and reports homepage depth, rendered\n  orphans, and the declared-vs-rendered gap. Anchor extraction honors `<base href>`,\n  and the crawl dedupes redirect targets and surfaces truncated bodies.\n- `links candidates` proposes reviewable, section-clustered contextual links from\n  the declared graph, excluding anchors already rendered, with an optional\n  `--decide` pass.\n- `links decide` answers real-reason and anchor-present probabilities for a\n  candidate set through TypeSafe System One (Jev), routing below-threshold\n  answers to human review.\n\n`pagegraph check` also gains `--require-inbound` (with a configurable policy) so a\nsitemap-eligible page must have at least N incoming contextual edges.\n"
-    filename: 2026-09-19-links-decisions.md
+  - content: "---\npackages:\n  pagegraph:\n    type: patch\n---\n\n### Assert contextual coverage on the rendered graph\n\n`pagegraph links verify` now closes the loop between declared and served links:\n\n- `links verify <url> --emit-rendered <path>` writes the crawl's raw edge set as a\n  versioned `links-rendered` artifact that preserves each anchor's `region`\n  (`body` vs `nav`/`footer`/`header`) and the provenance a gate needs — `origin`,\n  `seed`, the rendered page paths, and the crawl's `limit`, `truncated`,\n  `bodyTruncated`, and `failures`. It is also a drop-in input for\n  `links candidates --rendered`.\n- `links verify --rendered <path>` replays a saved artifact instead of crawling, so\n  one crawl can be asserted repeatedly without re-fetching.\n- `links verify --assert-coverage` evaluates the `seo.config.ts` `coverage` rules\n  against the anchors a crawler actually receives. Only same-origin body-region\n  anchors count, matching `check`'s `related`-only semantics; the rule universe\n  stays the declared graph's sitemap-eligible pages. An unmet rule exits 1, and the\n  command refuses to assert — rather than reporting a false pass — on a truncated\n  crawl, a page that failed to fetch, a truncated body, a missing `coverage`\n  policy, or an origin mismatch.\n\nThe default `--json` summary is unchanged; the `coverage` block appears only under\n`--assert-coverage`.\n"
+    filename: 2026-09-20-rendered-edges-coverage.md
     v: 0.0.0
 core:packages:
   - changelogIds:
-      - 2026-09-19-links-decisions.md
+      - 2026-09-20-rendered-edges-coverage.md
     id: npm:pagegraph
     updated: true
 npm:packages:
