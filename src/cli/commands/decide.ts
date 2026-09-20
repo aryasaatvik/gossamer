@@ -23,6 +23,7 @@ import { dirname, resolve } from "node:path";
 
 import { TypeSafeClient, TypeSafeDecisionModel } from "@effect/ai-typesafe";
 
+import { contentFamily } from "../../decide/families/content";
 import { serpFamily } from "../../decide/families/serp";
 import { decodeInputsText } from "../../decide/inputs";
 import { decodeFamilyInputs, runDecisions, type DecisionFamily } from "../../decide/run";
@@ -276,6 +277,21 @@ const serpCommand = familySubcommand(serpFamily, {
   ],
 });
 
+const contentCommand = familySubcommand(contentFamily, {
+  description:
+    "Score a page's content rubric and place its value on thin | adequate | strong (pass | flag | review)",
+  examples: [
+    {
+      command: "pagegraph decide content page.json",
+      description: "Decide a page's content quality and print the reviewable plan",
+    },
+    {
+      command: "cat page.json | pagegraph decide content --json | jq",
+      description: "Read the content batch from stdin and emit versioned JSON",
+    },
+  ],
+});
+
 const linksDecideCommand = decideCommand({
   name: "links",
   description: "Answer the links family: real reason and anchor present per candidate",
@@ -305,5 +321,5 @@ export const decideCommandGroup = Command.make("decide").pipe(
       description: "Decide a link-candidate batch and emit versioned JSON",
     },
   ]),
-  Command.withSubcommands([serpCommand, linksDecideCommand]),
+  Command.withSubcommands([serpCommand, contentCommand, linksDecideCommand]),
 );
