@@ -24,6 +24,8 @@ import { dirname, resolve } from "node:path";
 import { TypeSafeClient, TypeSafeDecisionModel } from "@effect/ai-typesafe";
 
 import { contentFamily } from "../../decide/families/content";
+import { fitFamily } from "../../decide/families/fit";
+import { metaFamily } from "../../decide/families/meta";
 import { serpFamily } from "../../decide/families/serp";
 import { decodeInputsText } from "../../decide/inputs";
 import { decodeFamilyInputs, runDecisions, type DecisionFamily } from "../../decide/run";
@@ -105,6 +107,19 @@ const parseInputs = <Input>(
     catch: (cause) => new SeoCliError({ message: `Invalid inputs: ${messageOf(cause)}` }),
   });
 
+/** Apply a family's optional input guard to every decoded input. */
+const validateInputs = <Input>(
+  family: DecisionFamily<Input>,
+  inputs: ReadonlyArray<Input>,
+): Effect.Effect<void, SeoCliError> =>
+  Effect.gen(function* () {
+    if (family.validate === undefined) return;
+    for (const input of inputs) {
+      const problem = family.validate(input);
+      if (problem !== undefined) return yield* new SeoCliError({ message: problem });
+    }
+  });
+
 const requireKey = (family: string): Effect.Effect<void, SeoCliError> =>
   process.env.TYPESAFE_API_KEY === undefined || process.env.TYPESAFE_API_KEY === ""
     ? Effect.fail(
@@ -165,6 +180,7 @@ const runFamily = <Input>(
     const concurrency = yield* positive("concurrency", options.concurrency);
     const text = yield* readInputsText(Option.getOrUndefined(options.file));
     const inputs = yield* parseInputs(family, text);
+    yield* validateInputs(family, inputs);
     yield* requireKey(family.name);
 
     const report = yield* runDecisions({
@@ -292,6 +308,36 @@ const contentCommand = familySubcommand(contentFamily, {
   ],
 });
 
+const fitCommand = familySubcommand(fitFamily, {
+  description:
+    "Choose the best existing page for a query, or flag cannibalization or a gap (map | cannibalized | gap | review)",
+  examples: [
+    {
+      command: "pagegraph decide fit candidates.json",
+      description: "Rank existing pages for a query and print the reviewable plan",
+    },
+    {
+      command: "cat candidates.json | pagegraph decide fit --json | jq",
+      description: "Read the fit batch from stdin and emit versioned JSON",
+    },
+  ],
+});
+
+const metaCommand = familySubcommand(metaFamily, {
+  description:
+    "Rank supplied title/description candidates for a page (choose:<id> | review)",
+  examples: [
+    {
+      command: "pagegraph decide meta meta.json",
+      description: "Rank metadata candidates and print the chosen one or a review",
+    },
+    {
+      command: "cat meta.json | pagegraph decide meta --json | jq",
+      description: "Read the meta batch from stdin and emit versioned JSON",
+    },
+  ],
+});
+
 const linksDecideCommand = decideCommand({
   name: "links",
   description: "Answer the links family: real reason and anchor present per candidate",
@@ -321,5 +367,11 @@ export const decideCommandGroup = Command.make("decide").pipe(
       description: "Decide a link-candidate batch and emit versioned JSON",
     },
   ]),
-  Command.withSubcommands([serpCommand, contentCommand, linksDecideCommand]),
+  Command.withSubcommands([
+    serpCommand,
+    contentCommand,
+    fitCommand,
+    metaCommand,
+    linksDecideCommand,
+  ]),
 );

@@ -34,6 +34,12 @@ export interface DecisionFamily<Input> {
   readonly inputRef: (input: Input) => string;
   /** Map validated answers to a verdict; `"review"` means a human decides. */
   readonly evaluate: (input: Input, answers: any, threshold: number) => string;
+  /**
+   * Optional input-level guard for constraints a schema cannot express, such as
+   * "dynamic-label families need at least two candidates". Returns a message to
+   * fail the run, or `undefined` when the input is usable.
+   */
+  readonly validate?: (input: Input) => string | undefined;
 }
 
 const isUnitInterval = (value: unknown): value is number =>
