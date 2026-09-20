@@ -506,6 +506,50 @@ Input: one page per input, with the evidence the rubric reads.
 
 `value` rates `thin | adequate | strong`.
 
+#### `decide fit` — which existing page should target this query?
+
+Input: a query plus the site's candidate pages. Candidate ids become the provider labels, so the
+family needs at least two candidates and ids at most 255 characters.
+
+```json
+{
+  "query": "best email api",
+  "candidates": [
+    { "id": "/email-api", "title": "Email API", "excerpt": "Send transactional email." },
+    { "id": "/pricing", "title": "Pricing", "excerpt": "Volume pricing." }
+  ]
+}
+```
+
+| Verdict        | Meaning                                                  |
+| -------------- | -------------------------------------------------------- |
+| `map`          | A page is confidently best; update it.                    |
+| `cannibalized` | Multiple pages already target the query.                  |
+| `gap`          | No page can serve the query; a new page is needed.        |
+| `review`       | The conflict or the best page is inside the confidence band. |
+
+#### `decide meta` — rank supplied title/description candidates
+
+Input: a page plus the candidates to rank. Drafting is out of scope — only the provided candidates
+are judged. Needs at least two candidates; ids at most 255 characters.
+
+```json
+{
+  "url": "https://example.com/email-api",
+  "intent": "choose an email api",
+  "categoryLock": "email api",
+  "candidates": [
+    { "id": "a", "title": "Email API", "description": "Send transactional email." },
+    { "id": "b", "title": "Email pricing", "description": "Volume pricing." }
+  ]
+}
+```
+
+| Verdict       | Meaning                                                                   |
+| ------------- | ------------------------------------------------------------------------- |
+| `choose:<id>` | A candidate is confidently best with clear intent, length, category, and clickbait checks. |
+| `review`      | A concern or an uncertain pick; a human decides.                           |
+
 ### Contextual-link coverage
 
 Declare a contextual-link coverage policy in `seo.config.ts` (a `coverage` array
