@@ -42,9 +42,11 @@ const isUnitInterval = (value: unknown): value is number =>
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === "object" && !Array.isArray(value);
 
-/** A probability distribution over `labels` that is unit-range and sums to 1. */
+/** A probability distribution over exactly `labels`: unit-range, summing to 1. */
 const isDistribution = (labels: ReadonlyArray<string>, value: unknown): boolean => {
-  if (!isPlainObject(value)) return false;
+  // Extra labels would be read by evaluators that scan the distribution, so
+  // require the cached keys to match the declared labels exactly.
+  if (!isPlainObject(value) || Object.keys(value).length !== labels.length) return false;
   let total = 0;
   for (const label of labels) {
     const probability = value[label];

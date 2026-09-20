@@ -172,6 +172,19 @@ describe("validCachedAnswers", () => {
     expect(validCachedAnswers(decisions, { ...valid, c: { label: "z", probabilities: { a: 0.9, b: 0.1 } } })).toBe(false);
     expect(validCachedAnswers(decisions, { ...valid, c: { label: "a", probabilities: { a: 0.9, b: 0.9 } } })).toBe(false);
     expect(validCachedAnswers(decisions, { ...valid, r: { rating: 5, label: "high", probabilities: { low: 0.1, high: 0.9 } } })).toBe(false);
+    // Extra labels would leak into evaluators that scan the distribution.
+    expect(
+      validCachedAnswers(decisions, {
+        ...valid,
+        c: { label: "a", probabilities: { a: 0.9, b: 0.1, extra: 0 } },
+      }),
+    ).toBe(false);
+    expect(
+      validCachedAnswers(decisions, {
+        ...valid,
+        r: { rating: 1, label: "high", probabilities: { low: 0.1, high: 0.9, extra: 0 } },
+      }),
+    ).toBe(false);
   });
 });
 
