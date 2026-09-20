@@ -12,6 +12,7 @@ import { mockDecisionModel, probability, rate } from "./helpers";
 
 const sample = {
   url: "https://example.com/email-api",
+  query: "best email api",
   title: "Transactional email API for product teams",
   h1: "Send transactional email",
   first150Words: "The API sends one message per call and reports delivery events.",
@@ -19,6 +20,7 @@ const sample = {
   wordCount: 1200,
   structuredData: ["Article", "FAQPage"],
   categoryLock: "email api",
+  siblingIntents: ["email deliverability", "sms api"],
   competitorExcerpts: ["A competitor's overview."],
 };
 
@@ -73,6 +75,8 @@ describe("ContentInput", () => {
   it("decodes a page and rejects a malformed one", () => {
     expect(decodeFamilyInputs(contentFamily, [sample])).toHaveLength(1);
     expect(() => decodeFamilyInputs(contentFamily, [{ url: "x" }])).toThrow();
+    expect(() => decodeFamilyInputs(contentFamily, [{ ...sample, wordCount: -1 }])).toThrow();
+    expect(() => decodeFamilyInputs(contentFamily, [{ ...sample, wordCount: 1.5 }])).toThrow();
   });
 });
 
@@ -90,6 +94,29 @@ describe("classifyContentVerdict", () => {
     expect(classifyContentVerdict(answersFor({ answersFirst: 0.6 }), 0.7)).toBe("review");
     // An ambiguous value distribution is uncertain even if its label is strong.
     expect(classifyContentVerdict(answersFor({}, "strong", 0.4), 0.7)).toBe("review");
+  });
+
+  it("reviews a confidently positive rubric whose evidence is missing", () => {
+    expect(
+      classifyContentVerdict(answersFor(), 0.7, {
+        distinctIntent: false,
+        competitiveSubstance: true,
+      }),
+    ).toBe("review");
+    expect(
+      classifyContentVerdict(answersFor(), 0.7, {
+        distinctIntent: true,
+        competitiveSubstance: false,
+      }),
+    ).toBe("review");
+    // A confident negative stays on the conservative side even without evidence.
+    expect(
+      classifyContentVerdict(
+        answersFor({ distinctIntent: 0.05, competitiveSubstance: 0.05 }),
+        0.7,
+        { distinctIntent: false, competitiveSubstance: false },
+      ),
+    ).toBe("flag");
   });
 });
 

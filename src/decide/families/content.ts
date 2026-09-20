@@ -19,15 +19,19 @@ export type ContentValue = (typeof CONTENT_VALUES)[number];
 /** One page plus the evidence the rubric reads. */
 export const ContentInput = Schema.Struct({
   url: Schema.String,
+  /** The query the page targets; intent rubrics cannot be judged without it. */
+  query: Schema.String,
   title: Schema.String,
   h1: Schema.String,
   first150Words: Schema.String,
   headings: Schema.Array(Schema.String),
-  wordCount: Schema.Number,
+  wordCount: Schema.Natural,
   /** schema.org types present on the page, e.g. `["Article", "FAQPage"]`. */
   structuredData: Schema.Array(Schema.String),
   /** The topic the page must stay inside; drifting outside it is a failure. */
   categoryLock: Schema.String,
+  /** Sibling pages' intents, needed to judge `distinctIntent`. */
+  siblingIntents: Schema.optional(Schema.Array(Schema.String)),
   competitorExcerpts: Schema.optional(Schema.Array(Schema.String)),
 });
 export type ContentInput = Schema.Schema.Type<typeof ContentInput>;
@@ -60,7 +64,7 @@ export const ContentDecision = Decision.make({
       "The title describes the page's actual content.",
     ),
     structuredDataMatches: boolean(
-      "The page's structured data matches its content type and the query intent.",
+      "The page's structured data matches its content type and the supplied query's intent.",
       "Structured data is missing, wrong, or mismatched.",
       "Structured data correctly describes the page.",
     ),
@@ -70,9 +74,9 @@ export const ContentDecision = Decision.make({
       "The page stays inside the locked category.",
     ),
     distinctIntent: boolean(
-      "The page serves a distinct intent rather than duplicating another page that already targets this query.",
-      "The page duplicates an existing page's intent.",
-      "The page serves an intent no existing page covers.",
+      "The page serves a distinct intent rather than duplicating a sibling page's intent. Judge only the sibling intents supplied; if none are supplied, treat this as unresolved.",
+      "The page duplicates a sibling page's intent.",
+      "The page serves an intent no supplied sibling covers.",
     ),
     value: Decision.rate({
       instructions:
@@ -95,20 +99,38 @@ const RUBRIC_KEYS = [
   "distinctIntent",
 ] as const;
 
+/** Whether the input carries the evidence each evidence-dependent rubric needs. */
+export interface ContentEvidence {
+  readonly distinctIntent: boolean;
+  readonly competitiveSubstance: boolean;
+}
+
+/** Evidence present by default; a caller with no evidence can still test the band logic. */
+const ALL_EVIDENCE: ContentEvidence = { distinctIntent: true, competitiveSubstance: true };
+
 /**
  * `flag` when the value rating is `thin` or any rubric probability is
  * confidently false; `review` when any probability (rubric or value
- * distribution) is inside the band; `pass` otherwise.
+ * distribution) is inside the band, or an evidence-dependent rubric is
+ * confidently positive without its evidence; `pass` otherwise. A confident
+ * negative on an unevidenced rubric stays `flag` — it is the conservative side.
  */
 export const classifyContentVerdict = (
   answers: {
     readonly value: { readonly label: string; readonly probabilities: Readonly<Record<string, number>> };
+    readonly distinctIntent: { readonly probability: number };
+    readonly competitiveSubstance: { readonly probability: number };
   } & Record<string, { readonly probability: number }>,
   threshold: number,
+  evidence: ContentEvidence = ALL_EVIDENCE,
 ): ContentVerdict => {
   const rubric = RUBRIC_KEYS.map((key) => answers[key].probability);
   const distribution = Object.values(answers.value.probabilities);
   if (anyInReviewBand([...rubric, ...distribution], threshold)) return "review";
+  if (!evidence.distinctIntent && answers.distinctIntent.probability >= threshold) return "review";
+  if (!evidence.competitiveSubstance && answers.competitiveSubstance.probability >= threshold) {
+    return "review";
+  }
   if (answers.value.label === "thin") return "flag";
   if (rubric.some((probability) => probability <= 1 - threshold)) return "flag";
   return "pass";
@@ -119,5 +141,10 @@ export const contentFamily: DecisionFamily<ContentInput> = {
   input: ContentInput,
   definitionFor: () => ContentDecision,
   inputRef: (input) => input.url,
-  evaluate: (_input, answers, threshold) => classifyContentVerdict(answers, threshold),
+  evaluate: (input, answers, threshold) =>
+    classifyContentVerdict(answers, threshold, {
+      distinctIntent: input.siblingIntents !== undefined && input.siblingIntents.length > 0,
+      competitiveSubstance:
+        input.competitorExcerpts !== undefined && input.competitorExcerpts.length > 0,
+    }),
 };

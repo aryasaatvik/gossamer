@@ -483,6 +483,7 @@ Input: one page per input, with the evidence the rubric reads.
 ```json
 {
   "url": "https://example.com/email-api",
+  "query": "best email api",
   "title": "Transactional email API for product teams",
   "h1": "Send transactional email",
   "first150Words": "The API sends one message per call and reports delivery events.",
@@ -490,6 +491,7 @@ Input: one page per input, with the evidence the rubric reads.
   "wordCount": 1200,
   "structuredData": ["Article", "FAQPage"],
   "categoryLock": "email api",
+  "siblingIntents": ["email deliverability", "sms api"],
   "competitorExcerpts": ["A competitor's overview."]
 }
 ```
@@ -498,7 +500,9 @@ Input: one page per input, with the evidence the rubric reads.
 | -------- | --------------------------------------------------------------------------- |
 | `pass`   | The value rating is not `thin` and no rubric probability is confidently false. |
 | `flag`   | Value is `thin`, or a rubric probability (`originalValue`, `answersFirst`, …) is confidently false. |
-| `review` | Any rubric or value probability is inside the band.                          |
+| `review` | Any rubric or value probability is inside the band, or an evidence-dependent rubric (`distinctIntent`, `competitiveSubstance`) is confidently positive without `siblingIntents`/`competitorExcerpts`. |
+
+`wordCount` must be a non-negative integer.
 
 `value` rates `thin | adequate | strong`.
 
