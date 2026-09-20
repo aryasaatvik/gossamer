@@ -4,14 +4,20 @@ import { DecisionModel } from "effect/unstable/ai";
 import { describe, expect, it } from "vitest";
 
 import {
+  applyBudget,
   buildLinksDecideReport,
   classifyVerdict,
   decideLinks,
   decodeLinkCandidates,
+  LINK_DIRECTIONS,
+  LINK_RELEVANCE,
   LinkDecision,
   type LinkCandidate,
   type LinkDecisionRecord,
+  type LinkDirection,
+  type LinkRelevanceLabel,
 } from "../../src/links/decide";
+import { classify as classifyAnswer, probability, rate as rateAnswer } from "../decide/helpers";
 
 /** Shape the provider receives after `DecisionModel` encodes the candidate. */
 type DecodedState = {
@@ -21,7 +27,12 @@ type DecodedState = {
   readonly existingAnchor?: string | null;
 };
 
-const probability = (value: number) => ({ _tag: "Probability" as const, probability: value });
+type MockAnswers = {
+  readonly realReason: number;
+  readonly anchorPresent: number;
+  readonly direction?: LinkDirection;
+  readonly relevance?: LinkRelevanceLabel;
+};
 
 /**
  * A `DecisionModel` backed by a lookup table, never the network. `make` runs the
@@ -29,7 +40,7 @@ const probability = (value: number) => ({ _tag: "Probability" as const, probabil
  * malformed provider response would.
  */
 const mockDecisionModel = (
-  answers: (state: DecodedState) => { readonly realReason: number; readonly anchorPresent: number },
+  answers: (state: DecodedState) => MockAnswers,
   onDecide?: (state: DecodedState, decisionKeys: ReadonlyArray<string>) => void,
 ) =>
   Layer.effect(
@@ -39,11 +50,14 @@ const mockDecisionModel = (
         Effect.sync(() => {
           const decoded = state as unknown as DecodedState;
           onDecide?.(decoded, Object.keys(decisions));
-          const { realReason, anchorPresent } = answers(decoded);
+          const { realReason, anchorPresent, direction = "a_to_b", relevance = "useful" } =
+            answers(decoded);
           return {
             answers: {
               realReason: probability(realReason),
               anchorPresent: probability(anchorPresent),
+              direction: classifyAnswer(direction, LINK_DIRECTIONS),
+              relevance: rateAnswer(relevance, LINK_RELEVANCE),
             },
             usage: { inputTokens: 12, outputTokens: 3 },
           };
@@ -51,23 +65,43 @@ const mockDecisionModel = (
     }),
   );
 
+const relevanceOf = (label: LinkRelevanceLabel) => ({
+  rating: LINK_RELEVANCE.indexOf(label),
+  label,
+  probabilities: rateAnswer(label, LINK_RELEVANCE).probabilities,
+});
+
 const record = (
   sourceUrl: string,
   verdict: LinkDecisionRecord["verdict"],
-): LinkDecisionRecord => ({
-  sourceUrl,
-  destinationUrl: `${sourceUrl}-target`,
-  sourceText: `${sourceUrl} copy`,
-  existingAnchor: null,
-  realReason: 0.9,
-  anchorPresent: 0.1,
-  verdict,
-});
+  options: {
+    readonly destinationUrl?: string;
+    readonly direction?: LinkDirection;
+    readonly relevance?: LinkRelevanceLabel;
+  } = {},
+): LinkDecisionRecord => {
+  const destinationUrl = options.destinationUrl ?? `${sourceUrl}-target`;
+  const direction = options.direction ?? "a_to_b";
+  return {
+    sourceUrl,
+    destinationUrl,
+    sourceText: `${sourceUrl} copy`,
+    existingAnchor: null,
+    realReason: 0.9,
+    anchorPresent: 0.1,
+    direction,
+    relevance: relevanceOf(options.relevance ?? "useful"),
+    ...(direction === "b_to_a" ? { from: destinationUrl, to: sourceUrl } : { from: sourceUrl, to: destinationUrl }),
+    verdict,
+  };
+};
 
 describe("LinkDecision", () => {
-  it("asks both decisions as probabilities over the candidate input", () => {
+  it("asks all four decisions over the candidate input", () => {
     expect(LinkDecision.decisions.realReason._tag).toBe("Probability");
     expect(LinkDecision.decisions.anchorPresent._tag).toBe("Probability");
+    expect(LinkDecision.decisions.direction._tag).toBe("Classify");
+    expect(LinkDecision.decisions.relevance._tag).toBe("Rate");
   });
 });
 
@@ -131,6 +165,8 @@ describe("buildLinksDecideReport", () => {
       schemaVersion: 1,
       model: "mock",
       threshold: 0.7,
+      budget: null,
+      dropped: 0,
       counts: { candidates: 4, recommend: 1, present: 1, skip: 1, review: 1 },
     });
     expect(report.resolved.map((entry) => entry.verdict)).toEqual(["recommend", "present", "skip"]);
@@ -138,6 +174,37 @@ describe("buildLinksDecideReport", () => {
     // Every candidate appears exactly once across the two buckets.
     expect([...report.resolved, ...report.review]).toHaveLength(4);
     expect(() => JSON.parse(JSON.stringify(report))).not.toThrow();
+  });
+});
+
+describe("applyBudget", () => {
+  it("keeps the top-K per source by relevance, preserving original order", () => {
+    const records = [
+      record("/a", "recommend", { destinationUrl: "/a1", relevance: "useful" }),
+      record("/a", "recommend", { destinationUrl: "/a2", relevance: "essential" }),
+      record("/a", "recommend", { destinationUrl: "/a3", relevance: "irrelevant" }),
+      record("/b", "recommend", { destinationUrl: "/b1", relevance: "essential" }),
+    ];
+
+    const kept = applyBudget(records, 2);
+
+    expect(kept.map((entry) => entry.destinationUrl)).toEqual(["/a1", "/a2", "/b1"]);
+  });
+
+  it("passes through sources at or under the budget", () => {
+    const records = [record("/a", "recommend", { destinationUrl: "/a1" })];
+    expect(applyBudget(records, 4)).toEqual(records);
+  });
+
+  it("counts b_to_a candidates against the outbound page's budget", () => {
+    const records = [
+      record("/a", "recommend", { destinationUrl: "/z", direction: "b_to_a", relevance: "useful" }),
+      record("/b", "recommend", { destinationUrl: "/z", direction: "b_to_a", relevance: "essential" }),
+      record("/c", "recommend", { destinationUrl: "/z", direction: "b_to_a", relevance: "irrelevant" }),
+    ];
+
+    // All three share the outbound page /z; the top two by relevance survive.
+    expect(applyBudget(records, 2).map((entry) => entry.sourceUrl)).toEqual(["/a", "/b"]);
   });
 });
 
@@ -185,6 +252,8 @@ describe("decideLinks", () => {
       skip: 1,
       review: 1,
     });
+    expect(report.budget).toBeNull();
+    expect(report.dropped).toBe(0);
     expect(report.resolved.map((entry) => entry.verdict)).toEqual(["recommend", "present", "skip"]);
     expect(report.review).toEqual([
       {
@@ -194,6 +263,10 @@ describe("decideLinks", () => {
         existingAnchor: null,
         realReason: 0.55,
         anchorPresent: 0.1,
+        direction: "a_to_b",
+        relevance: relevanceOf("useful"),
+        from: "/d",
+        to: "/x",
         verdict: "review",
       },
     ]);
@@ -204,16 +277,20 @@ describe("decideLinks", () => {
       existingAnchor: null,
       realReason: 0.92,
       anchorPresent: 0.08,
+      direction: "a_to_b",
+      relevance: relevanceOf("useful"),
+      from: "/a",
+      to: "/pricing",
       verdict: "recommend",
     });
 
-    // One provider call per candidate, asking both decisions together.
+    // One provider call per candidate, asking all four decisions together.
     expect(states.map((state) => state.sourceUrl)).toEqual(["/a", "/b", "/c", "/d"]);
     expect(decisionKeys).toEqual([
-      ["realReason", "anchorPresent"],
-      ["realReason", "anchorPresent"],
-      ["realReason", "anchorPresent"],
-      ["realReason", "anchorPresent"],
+      ["realReason", "anchorPresent", "direction", "relevance"],
+      ["realReason", "anchorPresent", "direction", "relevance"],
+      ["realReason", "anchorPresent", "direction", "relevance"],
+      ["realReason", "anchorPresent", "direction", "relevance"],
     ]);
     // An absent optional field stays absent; a present one is encoded.
     expect(Object.hasOwn(states[0]!, "existingAnchor")).toBe(false);
@@ -228,11 +305,14 @@ describe("decideLinks", () => {
       ),
     );
 
+    const relevance = relevanceOf("useful");
     expect(JSON.parse(JSON.stringify(report))).toEqual({
       kind: "links-decide",
       schemaVersion: 1,
       model: "jev-latest",
       threshold: 0.7,
+      budget: null,
+      dropped: 0,
       counts: { candidates: 4, recommend: 1, present: 1, skip: 1, review: 1 },
       resolved: [
         {
@@ -242,6 +322,10 @@ describe("decideLinks", () => {
           existingAnchor: null,
           realReason: 0.92,
           anchorPresent: 0.08,
+          direction: "a_to_b",
+          relevance,
+          from: "/a",
+          to: "/pricing",
           verdict: "recommend",
         },
         {
@@ -251,6 +335,10 @@ describe("decideLinks", () => {
           existingAnchor: "docs",
           realReason: 0.88,
           anchorPresent: 0.9,
+          direction: "a_to_b",
+          relevance,
+          from: "/b",
+          to: "/docs",
           verdict: "present",
         },
         {
@@ -260,6 +348,10 @@ describe("decideLinks", () => {
           existingAnchor: null,
           realReason: 0.05,
           anchorPresent: 0.1,
+          direction: "a_to_b",
+          relevance,
+          from: "/c",
+          to: "/blog",
           verdict: "skip",
         },
       ],
@@ -271,10 +363,56 @@ describe("decideLinks", () => {
           existingAnchor: null,
           realReason: 0.55,
           anchorPresent: 0.1,
+          direction: "a_to_b",
+          relevance,
+          from: "/d",
+          to: "/x",
           verdict: "review",
         },
       ],
     });
+  });
+
+  it("reverses the recommended endpoints when the model picks b_to_a", async () => {
+    const layer = mockDecisionModel((state) => ({
+      ...probabilities[state.sourceUrl]!,
+      direction: "b_to_a",
+    }));
+    const report = await Effect.runPromise(
+      decideLinks([candidates[0]!], { model: "mock", threshold: 0.7 }).pipe(Effect.provide(layer)),
+    );
+
+    expect(report.resolved[0]).toMatchObject({
+      sourceUrl: "/a",
+      destinationUrl: "/pricing",
+      direction: "b_to_a",
+      from: "/pricing",
+      to: "/a",
+      verdict: "recommend",
+    });
+  });
+
+  it("applies the per-source budget and reports what it dropped", async () => {
+    const sameSource: ReadonlyArray<LinkCandidate> = [
+      { sourceUrl: "/a", destinationUrl: "/a1", sourceText: "one" },
+      { sourceUrl: "/a", destinationUrl: "/a2", sourceText: "two" },
+      { sourceUrl: "/a", destinationUrl: "/a3", sourceText: "three" },
+    ];
+    const layer = mockDecisionModel((state) => ({
+      ...probabilities["/a"]!,
+      relevance: state.destinationUrl === "/a2" ? "essential" : "irrelevant",
+    }));
+
+    const report = await Effect.runPromise(
+      decideLinks(sameSource, { model: "mock", threshold: 0.7, budget: 1 }).pipe(
+        Effect.provide(layer),
+      ),
+    );
+
+    expect(report.budget).toBe(1);
+    expect(report.dropped).toBe(2);
+    expect(report.counts.candidates).toBe(1);
+    expect(report.resolved[0]?.destinationUrl).toBe("/a2");
   });
 
   it("returns an empty report for no candidates", async () => {

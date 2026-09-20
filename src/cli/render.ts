@@ -358,8 +358,8 @@ const VERDICT_LABELS: Readonly<Record<LinkVerdict, string>> = {
 };
 
 const decisionLine = (record: LinkDecisionRecord): Array<string> => [
-  `  ${record.sourceUrl} → ${record.destinationUrl}`,
-  `    realReason ${record.realReason.toFixed(2)} · anchorPresent ${record.anchorPresent.toFixed(2)}`,
+  `  ${record.from} ${record.direction === "both" ? "↔" : "→"} ${record.to}`,
+  `    realReason ${record.realReason.toFixed(2)} · anchorPresent ${record.anchorPresent.toFixed(2)} · direction ${record.direction} · relevance ${record.relevance.label}`,
   `    "${record.sourceText}"`,
 ];
 
@@ -377,8 +377,9 @@ const verdictBlock = (verdict: LinkVerdict, records: ReadonlyArray<LinkDecisionR
  */
 export const renderLinksDecideReport = (report: LinksDecideReport): string => {
   const { counts } = report;
+  const budget = report.budget === null ? "none" : `${report.budget}/source`;
   const lines: Array<string> = [
-    `${counts.candidates} candidate(s) · model ${report.model} · threshold ${report.threshold.toFixed(2)}`,
+    `${counts.candidates} candidate(s) · model ${report.model} · threshold ${report.threshold.toFixed(2)} · budget ${budget} · dropped ${report.dropped}`,
     "",
     `  recommend  ${counts.recommend}`,
     `  present    ${counts.present}`,

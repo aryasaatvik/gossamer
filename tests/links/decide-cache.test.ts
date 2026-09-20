@@ -8,9 +8,32 @@ import { DecisionModel } from "effect/unstable/ai";
 import { afterAll, describe, expect, it } from "vitest";
 
 import { cacheKey, inputHash } from "../../src/decide/run";
-import { decideLinks, type LinkCandidate } from "../../src/links/decide";
+import {
+  decideLinks,
+  LINK_DIRECTIONS,
+  LINK_RELEVANCE,
+  type LinkCandidate,
+} from "../../src/links/decide";
 
 const probability = (value: number) => ({ _tag: "Probability" as const, probability: value });
+
+const classify = (label: string, labels: ReadonlyArray<string>) => {
+  const rest = 0.1 / (labels.length - 1);
+  return {
+    _tag: "Classify" as const,
+    label,
+    probabilities: Object.fromEntries(labels.map((each) => [each, each === label ? 0.9 : rest])),
+  };
+};
+
+const rate = (label: string, levels: ReadonlyArray<string>) => {
+  const rest = 0.1 / (levels.length - 1);
+  return {
+    _tag: "Rate" as const,
+    rating: levels.indexOf(label),
+    probabilities: Object.fromEntries(levels.map((each) => [each, each === label ? 0.9 : rest])),
+  };
+};
 
 const candidates: ReadonlyArray<LinkCandidate> = [
   { sourceUrl: "/a", destinationUrl: "/b", sourceText: "copy" },
@@ -32,8 +55,10 @@ const countingModel = (
           return {
             answers: Object.fromEntries(
               Object.keys(decisions).map((key) => {
-                const value = key === "realReason" ? realReason : anchorPresent;
-                return [key, probability(value)];
+                if (key === "realReason") return [key, probability(realReason)];
+                if (key === "anchorPresent") return [key, probability(anchorPresent)];
+                if (key === "direction") return [key, classify("a_to_b", LINK_DIRECTIONS)];
+                return [key, rate("useful", LINK_RELEVANCE)];
               }),
             ),
             usage: { inputTokens: 1, outputTokens: 1 },

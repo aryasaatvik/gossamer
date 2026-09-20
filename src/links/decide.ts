@@ -23,6 +23,17 @@ import { cacheKey, inputHash, validCachedAnswers } from "../decide/run";
 /** Default probability boundary between a confident and an uncertain answer. */
 export const DEFAULT_LINK_THRESHOLD = 0.7;
 
+/** Keep at most this many candidates per source unless `--budget` overrides it. */
+export const DEFAULT_LINK_BUDGET = 4;
+
+/** Which direction(s) between the candidate pair deserve a link. */
+export const LINK_DIRECTIONS = ["a_to_b", "b_to_a", "both"] as const;
+export type LinkDirection = (typeof LINK_DIRECTIONS)[number];
+
+/** Ordered relevance scale for budget selection. */
+export const LINK_RELEVANCE = ["irrelevant", "useful", "essential"] as const;
+export type LinkRelevanceLabel = (typeof LINK_RELEVANCE)[number];
+
 /** One proposed contextual link, plus the source copy the model reads. */
 export const LinkCandidate = Schema.Struct({
   sourceUrl: Schema.String,
@@ -34,8 +45,10 @@ export const LinkCandidate = Schema.Struct({
 export type LinkCandidate = Schema.Schema.Type<typeof LinkCandidate>;
 
 /**
- * The two decisions every candidate answers. Both are probabilities, so the
- * model returns a calibrated number rather than generated prose.
+ * The four decisions every candidate answers in one provider call: two
+ * probabilities, a direction classification, and a relevance rating. The
+ * probabilities decide the verdict; direction and relevance inform the plan and
+ * the per-source budget.
  */
 export const LinkDecision = Decision.make({
   input: LinkCandidate,
@@ -55,6 +68,20 @@ export const LinkDecision = Decision.make({
         false: "No existing anchor to the destination in the copy.",
         true: "Descriptive anchor text to the destination is already in the copy.",
       },
+    }),
+    direction: Decision.classify({
+      instructions:
+        "Which direction between the candidate pair deserves a link: source → destination, destination → source, or both.",
+      criteria: {
+        a_to_b: "The source page should link to the destination page.",
+        b_to_a: "The destination page should link to the source page.",
+        both: "Both directions are reader-useful.",
+      },
+    }),
+    relevance: Decision.rate({
+      instructions:
+        "How relevant this link is to the reader: irrelevant is noise, useful is a sensible next step, essential is a link the page is incomplete without.",
+      criteria: LINK_RELEVANCE,
     }),
   },
 });
@@ -89,6 +116,13 @@ export const classifyVerdict = (
 
 export type LinkVerdict = "recommend" | "present" | "skip" | "review";
 
+/** The relevance rating, as the report emits it. */
+export interface LinkRelevance {
+  readonly rating: number;
+  readonly label: LinkRelevanceLabel;
+  readonly probabilities: Readonly<Record<string, number>>;
+}
+
 /** One candidate with its answers and verdict, exactly as the report emits it. */
 export interface LinkDecisionRecord {
   readonly sourceUrl: string;
@@ -97,6 +131,14 @@ export interface LinkDecisionRecord {
   readonly existingAnchor: string | null;
   readonly realReason: number;
   readonly anchorPresent: number;
+  readonly direction: LinkDirection;
+  readonly relevance: LinkRelevance;
+  /**
+   * The endpoints a recommendation directs, honoring `direction`: `b_to_a`
+   * reverses the candidate pair. For `both`, they stay source → destination.
+   */
+  readonly from: string;
+  readonly to: string;
   readonly verdict: LinkVerdict;
 }
 
@@ -118,16 +160,47 @@ export interface LinksDecideReport {
   readonly schemaVersion: 1;
   readonly model: string;
   readonly threshold: number;
+  /** Per-source candidate budget, or null when no budget was applied. */
+  readonly budget: number | null;
+  /** Candidates removed by the per-source budget. */
+  readonly dropped: number;
   readonly counts: LinksDecideCounts;
   readonly resolved: ReadonlyArray<LinkDecisionRecord>;
   readonly review: ReadonlyArray<LinkDecisionRecord>;
 }
+
+/**
+ * Keep the top `budget` candidates per outbound page by relevance rating,
+ * preserving the original order. The outbound page is `record.from`, which
+ * honors `direction` — grouping by the candidate's `sourceUrl` would misspend the
+ * quota when the model recommends the reverse direction. Ties keep their
+ * original order (stable sort). Pages with fewer candidates pass through.
+ */
+export const applyBudget = (
+  records: ReadonlyArray<LinkDecisionRecord>,
+  budget: number,
+): ReadonlyArray<LinkDecisionRecord> => {
+  const bySource = new Map<string, Array<LinkDecisionRecord>>();
+  for (const record of records) {
+    const bucket = bySource.get(record.from);
+    if (bucket === undefined) bySource.set(record.from, [record]);
+    else bucket.push(record);
+  }
+  const kept = new Set<LinkDecisionRecord>();
+  for (const bucket of bySource.values()) {
+    const top = [...bucket].sort((a, b) => b.relevance.rating - a.relevance.rating).slice(0, budget);
+    for (const record of top) kept.add(record);
+  }
+  return records.filter((record) => kept.has(record));
+};
 
 /** Group records into resolved/review buckets and count each verdict. */
 export const buildLinksDecideReport = (options: {
   readonly model: string;
   readonly threshold: number;
   readonly records: ReadonlyArray<LinkDecisionRecord>;
+  readonly budget?: number;
+  readonly dropped?: number;
 }): LinksDecideReport => {
   const counts = { recommend: 0, present: 0, skip: 0, review: 0 };
   const resolved: Array<LinkDecisionRecord> = [];
@@ -142,17 +215,41 @@ export const buildLinksDecideReport = (options: {
     schemaVersion: 1,
     model: options.model,
     threshold: options.threshold,
+    budget: options.budget ?? null,
+    dropped: options.dropped ?? 0,
     counts: { candidates: options.records.length, ...counts },
     resolved,
     review,
   };
 };
 
-/** The two validated answers a record is built from, cache-compatible JSON. */
+/** The four validated answers a record is built from, cache-compatible JSON. */
 interface LinkAnswers {
   readonly realReason: { readonly probability: number };
   readonly anchorPresent: { readonly probability: number };
+  readonly direction: {
+    readonly label: LinkDirection;
+    readonly probabilities: Readonly<Record<string, number>>;
+  };
+  readonly relevance: {
+    readonly rating: number;
+    readonly label: LinkRelevanceLabel;
+    readonly probabilities: Readonly<Record<string, number>>;
+  };
 }
+
+/**
+ * The endpoints a `recommend` verdict actually directs. `b_to_a` reverses the
+ * candidate pair, so the report names the direction the model chose rather than
+ * always printing source → destination.
+ */
+const endpoints = (
+  candidate: LinkCandidate,
+  direction: LinkDirection,
+): { readonly from: string; readonly to: string } =>
+  direction === "b_to_a"
+    ? { from: candidate.destinationUrl, to: candidate.sourceUrl }
+    : { from: candidate.sourceUrl, to: candidate.destinationUrl };
 
 const toRecord = (
   candidate: LinkCandidate,
@@ -161,6 +258,7 @@ const toRecord = (
 ): LinkDecisionRecord => {
   const realReason = answers.realReason.probability;
   const anchorPresent = answers.anchorPresent.probability;
+  const direction = answers.direction.label;
   return {
     sourceUrl: candidate.sourceUrl,
     destinationUrl: candidate.destinationUrl,
@@ -168,6 +266,13 @@ const toRecord = (
     existingAnchor: candidate.existingAnchor ?? null,
     realReason,
     anchorPresent,
+    direction,
+    relevance: {
+      rating: answers.relevance.rating,
+      label: answers.relevance.label,
+      probabilities: answers.relevance.probabilities,
+    },
+    ...endpoints(candidate, direction),
     verdict: classifyVerdict(realReason, anchorPresent, threshold),
   };
 };
@@ -185,6 +290,8 @@ export const decideLinks = (
     readonly concurrency?: number;
     /** Cache directory; absent means no cache. */
     readonly cacheDir?: string;
+    /** Keep the top-K candidates per source by relevance; absent means no budget. */
+    readonly budget?: number;
   },
 ): Effect.Effect<LinksDecideReport, AiError.AiError, DecisionModel.DecisionModel> =>
   Effect.gen(function* () {
@@ -205,10 +312,13 @@ export const decideLinks = (
         }),
       { concurrency: options.concurrency ?? 4 },
     );
+    const selected = options.budget === undefined ? records : applyBudget(records, options.budget);
     return buildLinksDecideReport({
       model: options.model,
       threshold: options.threshold,
-      records,
+      records: selected,
+      budget: options.budget,
+      dropped: records.length - selected.length,
     });
   });
 

@@ -108,11 +108,18 @@ describe("renderTree", () => {
 });
 
 describe("renderLinksDecideReport", () => {
+  const relevance = {
+    rating: 2,
+    label: "essential" as const,
+    probabilities: { irrelevant: 0.05, useful: 0.05, essential: 0.9 },
+  };
   const report: LinksDecideReport = {
     kind: "links-decide",
     schemaVersion: 1,
     model: "jev-latest",
     threshold: 0.7,
+    budget: 4,
+    dropped: 0,
     counts: { candidates: 2, recommend: 1, present: 0, skip: 0, review: 1 },
     resolved: [
       {
@@ -122,6 +129,10 @@ describe("renderLinksDecideReport", () => {
         existingAnchor: null,
         realReason: 0.93,
         anchorPresent: 0.06,
+        direction: "a_to_b",
+        relevance,
+        from: "/blog/post",
+        to: "/pricing",
         verdict: "recommend",
       },
     ],
@@ -133,6 +144,10 @@ describe("renderLinksDecideReport", () => {
         existingAnchor: null,
         realReason: 0.58,
         anchorPresent: 0.44,
+        direction: "both",
+        relevance,
+        from: "/docs/start",
+        to: "/guides",
         verdict: "review",
       },
     ],
@@ -145,7 +160,7 @@ describe("renderLinksDecideReport", () => {
     expect(output).toContain("/blog/post → /pricing");
     expect(output).toContain("realReason 0.93 · anchorPresent 0.06");
     expect(output).toContain("Review (1):");
-    expect(output).toContain("/docs/start → /guides");
+    expect(output).toContain("/docs/start ↔ /guides");
   });
 
   it("states when nothing needs review", () => {
