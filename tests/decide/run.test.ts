@@ -14,6 +14,7 @@ import {
   decodeFamilyInputs,
   inputHash,
   runDecisions,
+  validCachedAnswers,
   type DecisionFamily,
 } from "../../src/decide/run";
 
@@ -145,6 +146,35 @@ describe("buildDecisionReport", () => {
   });
 });
 
+describe("validCachedAnswers", () => {
+  const decisions = {
+    p: Decision.probability({
+      instructions: "p",
+      criteria: { false: "f", true: "t" },
+    }),
+    c: Decision.classify({ instructions: "c", criteria: { a: "A", b: "B" } }),
+    r: Decision.rate({ instructions: "r", criteria: ["low", "high"] }),
+  };
+  const valid = {
+    p: { probability: 0.9 },
+    c: { label: "a", probabilities: { a: 0.9, b: 0.1 } },
+    r: { rating: 1, label: "high", probabilities: { low: 0.1, high: 0.9 } },
+  };
+
+  it("accepts a valid answer set", () => {
+    expect(validCachedAnswers(decisions, valid)).toBe(true);
+  });
+
+  it("rejects malformed answers, labels, ranges, and distributions", () => {
+    expect(validCachedAnswers(decisions, {})).toBe(false);
+    expect(validCachedAnswers(decisions, { ...valid, p: { probability: -1 } })).toBe(false);
+    expect(validCachedAnswers(decisions, { ...valid, p: { probability: null } })).toBe(false);
+    expect(validCachedAnswers(decisions, { ...valid, c: { label: "z", probabilities: { a: 0.9, b: 0.1 } } })).toBe(false);
+    expect(validCachedAnswers(decisions, { ...valid, c: { label: "a", probabilities: { a: 0.9, b: 0.9 } } })).toBe(false);
+    expect(validCachedAnswers(decisions, { ...valid, r: { rating: 5, label: "high", probabilities: { low: 0.1, high: 0.9 } } })).toBe(false);
+  });
+});
+
 describe("decodeFamilyInputs", () => {
   it("decodes valid inputs and rejects invalid ones", () => {
     expect(decodeFamilyInputs(fakeFamily, [{ id: "a", okay: true }])).toEqual([
@@ -213,24 +243,28 @@ describe("runDecisions", () => {
   });
 
   it("treats a malformed cache entry as a miss", async () => {
-    const cacheDir = temporaryDirectory();
     const input = inputs[0]!;
     const key = cacheKey("fake", "mock", inputHash(input));
-    writeFileSync(join(cacheDir, `${key}.json`), "{}\n", "utf8");
+    const payloads = ["{}", '{"okay":{"probability":null}}', '{"okay":{"probability":5}}', '{"okay":{}}'];
 
-    let calls = 0;
-    const report = await Effect.runPromise(
-      runDecisions({
-        family: fakeFamily,
-        inputs: [input],
-        model: "mock",
-        threshold: 0.7,
-        cacheDir,
-      }).pipe(Effect.provide(mockModel((state) => values[state.id]!, () => calls++))),
-    );
+    for (const payload of payloads) {
+      const cacheDir = temporaryDirectory();
+      writeFileSync(join(cacheDir, `${key}.json`), `${payload}\n`, "utf8");
 
-    expect(calls).toBe(1);
-    expect(report.verdicts).toEqual({ accept: 1 });
+      let calls = 0;
+      const report = await Effect.runPromise(
+        runDecisions({
+          family: fakeFamily,
+          inputs: [input],
+          model: "mock",
+          threshold: 0.7,
+          cacheDir,
+        }).pipe(Effect.provide(mockModel((state) => values[state.id]!, () => calls++))),
+      );
+
+      expect(calls).toBe(1);
+      expect(report.verdicts).toEqual({ accept: 1 });
+    }
   });
 
   it("returns an empty report for no inputs", async () => {

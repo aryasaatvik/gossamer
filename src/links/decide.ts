@@ -18,7 +18,7 @@ import { Decision, DecisionModel } from "effect/unstable/ai";
 import type * as AiError from "effect/unstable/ai/AiError";
 
 import { cacheGet, cachePut } from "../decide/cache";
-import { cacheKey, inputHash } from "../decide/run";
+import { cacheKey, inputHash, validCachedAnswers } from "../decide/run";
 
 /** Default probability boundary between a confident and an uncertain answer. */
 export const DEFAULT_LINK_THRESHOLD = 0.7;
@@ -196,13 +196,8 @@ export const decideLinks = (
           const key = cacheKey("links", options.model, hash);
           const cached =
             options.cacheDir === undefined ? undefined : cacheGet(options.cacheDir, key);
-          if (cached !== undefined) {
-            // A corrupt cache file is a miss, not a crashed batch.
-            try {
-              return toRecord(candidate, cached as LinkAnswers, options.threshold);
-            } catch {
-              /* fall through and ask the provider */
-            }
+          if (cached !== undefined && validCachedAnswers(LinkDecision.decisions, cached)) {
+            return toRecord(candidate, cached as LinkAnswers, options.threshold);
           }
           const { answers } = yield* DecisionModel.decide(LinkDecision, { input: candidate });
           if (options.cacheDir !== undefined) cachePut(options.cacheDir, key, answers);

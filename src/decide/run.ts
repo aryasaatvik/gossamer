@@ -36,6 +36,70 @@ export interface DecisionFamily<Input> {
   readonly evaluate: (input: Input, answers: any, threshold: number) => string;
 }
 
+const isUnitInterval = (value: unknown): value is number =>
+  typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1;
+
+const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === "object" && !Array.isArray(value);
+
+/** A probability distribution over `labels` that is unit-range and sums to 1. */
+const isDistribution = (labels: ReadonlyArray<string>, value: unknown): boolean => {
+  if (!isPlainObject(value)) return false;
+  let total = 0;
+  for (const label of labels) {
+    const probability = value[label];
+    if (!isUnitInterval(probability)) return false;
+    total += probability;
+  }
+  return Math.abs(total - 1) <= 1e-6;
+};
+
+/**
+ * Whether cached answers have the shape `DecisionModel` would have validated —
+ * the same labels, ranges, and distributions. A cache file is only trusted when
+ * it round-trips through this check, so a partially malformed entry cannot
+ * produce a confident verdict.
+ */
+export const validCachedAnswers = (
+  decisions: Readonly<Record<string, Decision.Any>>,
+  answers: unknown,
+): boolean => {
+  if (!isPlainObject(answers)) return false;
+  for (const key of Object.keys(decisions)) {
+    const answer = answers[key];
+    if (!isPlainObject(answer)) return false;
+    const decision = decisions[key]!;
+    switch (decision._tag) {
+      case "Probability":
+        if (!isUnitInterval(answer.probability)) return false;
+        break;
+      case "Classify":
+        if (
+          typeof answer.label !== "string" ||
+          !Object.hasOwn(decision.criteria, answer.label) ||
+          !isDistribution(Object.keys(decision.criteria), answer.probabilities)
+        ) {
+          return false;
+        }
+        break;
+      case "Rate":
+        if (
+          typeof answer.rating !== "number" ||
+          !Number.isFinite(answer.rating) ||
+          answer.rating < 0 ||
+          answer.rating > decision.criteria.length - 1 ||
+          typeof answer.label !== "string" ||
+          !decision.criteria.includes(answer.label) ||
+          !isDistribution(decision.criteria, answer.probabilities)
+        ) {
+          return false;
+        }
+        break;
+    }
+  }
+  return true;
+};
+
 /** A probability is confident when it is at or beyond `threshold` on either side. */
 export const isConfident = (probability: number, threshold: number): boolean =>
   probability >= threshold || probability <= 1 - threshold;
@@ -129,14 +193,13 @@ export const runDecisions = <Input>(
           let usage: DecisionRecord["usage"];
           let verdict: string | undefined;
           if (cached !== undefined) {
-            // A corrupt or stale cache file must not abort the run. Evaluating
-            // the cached shape is the check: if the family cannot read it, fall
-            // through and ask the provider (which surfaces real bugs itself).
-            try {
-              verdict = options.family.evaluate(input, cached, options.threshold);
+            // A corrupt or stale cache file must not abort the run or produce a
+            // verdict. Validate the answers the way the provider path would; on
+            // any mismatch, fall through and ask the provider.
+            const decisions = options.family.definitionFor(input).decisions;
+            if (validCachedAnswers(decisions, cached)) {
               answers = cached;
-            } catch {
-              verdict = undefined;
+              verdict = options.family.evaluate(input, cached, options.threshold);
             }
           }
           if (verdict === undefined) {

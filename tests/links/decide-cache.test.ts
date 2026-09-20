@@ -89,18 +89,27 @@ describe("decideLinks cache", () => {
   });
 
   it("treats a malformed cache entry as a miss", async () => {
-    const cacheDir = temporaryDirectory();
     const key = cacheKey("links", "jev-latest", inputHash(candidates[0]!));
-    writeFileSync(join(cacheDir, `${key}.json`), "{}\n", "utf8");
+    const payloads = [
+      "{}",
+      '{"realReason":{"probability":null},"anchorPresent":{"probability":0.1}}',
+      '{"realReason":{"probability":5},"anchorPresent":{"probability":0.1}}',
+      '{"realReason":{"probability":0.9}}',
+    ];
 
-    const counter = { calls: 0 };
-    const report = await Effect.runPromise(
-      decideLinks(candidates, { model: "jev-latest", threshold: 0.7, cacheDir }).pipe(
-        Effect.provide(countingModel(() => ({ realReason: 0.9, anchorPresent: 0.1 }), counter)),
-      ),
-    );
+    for (const payload of payloads) {
+      const cacheDir = temporaryDirectory();
+      writeFileSync(join(cacheDir, `${key}.json`), `${payload}\n`, "utf8");
 
-    expect(counter.calls).toBe(1);
-    expect(report.counts.recommend).toBe(1);
+      const counter = { calls: 0 };
+      const report = await Effect.runPromise(
+        decideLinks(candidates, { model: "jev-latest", threshold: 0.7, cacheDir }).pipe(
+          Effect.provide(countingModel(() => ({ realReason: 0.9, anchorPresent: 0.1 }), counter)),
+        ),
+      );
+
+      expect(counter.calls).toBe(1);
+      expect(report.counts.recommend).toBe(1);
+    }
   });
 });
