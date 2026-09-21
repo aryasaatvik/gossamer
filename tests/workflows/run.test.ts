@@ -114,8 +114,11 @@ describe("keyword workflow", () => {
                 ],
               },
               sessionId: "session-1",
-              transcript: { messages: ["full transcript"] },
-              executor: [{ tool: "executor.search", output: { matches: 1 } }],
+              transcript: { messages: [{ type: "assistant", content: [] }] },
+              executor: {
+                searches: [{ tool: "codemode", input: {}, output: { matches: 1 } }],
+                calls: [{ tool: "codemode", input: {}, output: { demand: 10 } }],
+              },
             };
           },
           close: async () => {
@@ -138,7 +141,12 @@ describe("keyword workflow", () => {
     });
     expect(existsSync(join(result.directory, "summary.md"))).toBe(true);
     expect(JSON.parse(readFileSync(join(result.directory, "run.json"), "utf8"))).toMatchObject({
-      evidence: { executor: [{ tool: "executor.search" }] },
+      evidence: {
+        executor: {
+          searches: [{ tool: "codemode" }],
+          calls: [{ tool: "codemode" }],
+        },
+      },
       decisions: [{ family: "workflow-keywords" }],
     });
   });

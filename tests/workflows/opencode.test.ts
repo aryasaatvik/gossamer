@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { collectExecutorCalls, nonInteractiveEventError } from "../../src/workflows/opencode";
+import { collectExecutorEvidence, interactionEventError } from "../../src/workflows/opencode";
 
 const tool = (id: string, name: string, input: unknown, content: unknown) => ({
   type: "tool",
@@ -37,24 +37,46 @@ describe("OpenCode workflow evidence", () => {
       ],
     };
 
-    expect(collectExecutorCalls(transcript)).toEqual([search, discovered]);
+    expect(collectExecutorEvidence(transcript)).toEqual({
+      searches: [{ tool: "codemode", input: search.state.input, output: search.state.content }],
+      calls: [{ tool: "codemode", input: discovered.state.input, output: discovered.state.content }],
+    });
   });
 
-  it("fails noninteractive workflows on permission and form requests", () => {
+  it("does not treat repeated catalog searches as provider calls", () => {
+    const first = tool(
+      "search-1",
+      "codemode",
+      { code: 'return tools.executor.search({ query: "keywords" })' },
+      [{ type: "text", text: "tools.open_seo.cached.keywordIdeas" }],
+    );
+    const second = tool(
+      "search-2",
+      "codemode",
+      { code: 'return tools.executor.search({ query: "serps" })' },
+      [{ type: "text", text: "tools.dataforseo.serp.live" }],
+    );
+
     expect(
-      nonInteractiveEventError(
+      collectExecutorEvidence({ messages: [{ type: "assistant", content: [first, second] }] }),
+    ).toMatchObject({ searches: [{ tool: "codemode" }, { tool: "codemode" }], calls: [] });
+  });
+
+  it("fails immediately on permission and form requests", () => {
+    expect(
+      interactionEventError(
         { type: "permission.asked", data: { sessionID: "session-1" } },
         "session-1",
       )?.message,
-    ).toContain("--no-input");
+    ).toContain("noninteractive");
     expect(
-      nonInteractiveEventError(
+      interactionEventError(
         { type: "form.created", data: { form: { sessionID: "session-1" } } },
         "session-1",
       )?.message,
-    ).toContain("interactive input");
+    ).toContain("noninteractive");
     expect(
-      nonInteractiveEventError(
+      interactionEventError(
         { type: "form.created", data: { form: { sessionID: "other" } } },
         "session-1",
       ),

@@ -46,8 +46,8 @@ const outFlag = Flag.String("out").pipe(
   Flag.optional,
 );
 const inputFlag = Flag.Boolean("input").pipe(
-  Flag.withDescription("Allow TTY fallback questions; --no-input fails instead"),
-  Flag.withDefault(true),
+  Flag.withDescription("Reserved for interactive hosts; embedded CLI workflows fail fast on requests"),
+  Flag.withDefault(false),
 );
 
 const keywordsCommand = Command.make("keywords", {

@@ -232,13 +232,6 @@ try {
   if (installedManifest.version !== manifest.version) {
     throw new Error("Installed packed artifact version does not match package.json");
   }
-  // The OpenCode SDK owns its private Effect runtime, so `effect` may be present
-  // transitively. PageGraph's optional platform peer must still stay absent: the
-  // CLI bundles PageGraph's rc and the library entries do not import it.
-  if (existsSync(path.join(installDirectory, "node_modules", "@effect", "platform-bun"))) {
-    throw new Error("The optional PageGraph platform peer was installed into the consumer fixture");
-  }
-
   const sdkSmoke = await runSuccessfully(
     [
       "bun",

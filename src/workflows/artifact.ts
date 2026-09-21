@@ -1,24 +1,29 @@
+import { randomUUID } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 
+import summaryTemplate from "./prompts/summary.md" with { type: "text" };
 import type { WorkflowRunV1 } from "./model";
+import { TextTemplate } from "./template";
 
-export const createRunId = (date = new Date()): string =>
-  `${date.toISOString().replaceAll(":", "-").replace(".", "-")}-keywords`;
+export const createRunId = (date = new Date(), nonce = randomUUID()): string =>
+  `${date.toISOString().replaceAll(":", "-").replace(".", "-")}-${nonce.slice(0, 8)}-keywords`;
 
 const summary = (run: WorkflowRunV1): string => {
   const counts = run.decisions[0]?.counts;
-  return `# PageGraph keyword research
-
-- Run: \`${run.id}\`
-- Model: \`${run.model.provider}/${run.model.id}\`
-- Pages: ${run.targets.pages.length}
-- Queries: ${run.result.opportunities.length}
-- Decisions: ${counts?.inputs ?? 0} (${counts?.review ?? 0} review)
-- Executor records: ${run.evidence.executor.length}
-
-${run.result.summary}
-`;
+  return TextTemplate.from(summaryTemplate)
+    .values({
+      runId: run.id,
+      model: `${run.model.provider}/${run.model.id}`,
+      pages: run.targets.pages.length,
+      queries: run.result.opportunities.length,
+      decisions: counts?.inputs ?? 0,
+      review: counts?.review ?? 0,
+      executorSearches: run.evidence.executor.searches.length,
+      executorCalls: run.evidence.executor.calls.length,
+      summary: run.result.summary,
+    })
+    .render();
 };
 
 export const writeRunBundle = (

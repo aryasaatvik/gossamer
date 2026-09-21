@@ -1,6 +1,17 @@
 import type { DecisionBatchReport } from "../decide/record";
 import type { SerializedGraph } from "../cli/serialize";
 
+export interface ExecutorEvidenceRecord {
+  readonly tool: string;
+  readonly input: unknown;
+  readonly output: unknown;
+}
+
+export interface ExecutorEvidence {
+  readonly searches: ReadonlyArray<ExecutorEvidenceRecord>;
+  readonly calls: ReadonlyArray<ExecutorEvidenceRecord>;
+}
+
 export type WorkflowId = "research.keywords";
 
 export interface WorkflowTargetOptions {
@@ -52,7 +63,7 @@ export interface WorkflowRunV1 {
   readonly evidence: {
     readonly graph: SerializedGraph;
     readonly sources: ReadonlyArray<{ readonly path: string; readonly content: string }>;
-    readonly executor: ReadonlyArray<unknown>;
+    readonly executor: ExecutorEvidence;
   };
   readonly decisions: ReadonlyArray<DecisionBatchReport>;
   readonly changes: {

@@ -1,6 +1,8 @@
 import { TypeSafeClient, TypeSafeDecisionModel } from "@effect/ai-typesafe";
+import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Schema from "effect/Schema";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 
 import type { SeoCliConfig } from "../config";
@@ -11,8 +13,10 @@ import { collectWorkflowEvidence } from "./evidence";
 import { changedFiles, inspectGit } from "./git";
 import type { WorkflowHost } from "./opencode";
 import { acquireWorkflowHost } from "./opencode";
+import researchPromptSource from "./prompts/research-keywords.md" with { type: "text" };
 import { createRunId, writeRunBundle } from "./artifact";
-import { keywordFamily } from "./specs/keywords";
+import { keywordFamily, KeywordResearchStateSchema } from "./specs/keywords";
+import { TextTemplate } from "./template";
 import type { WorkflowRunV1, WorkflowTargetOptions } from "./model";
 
 export interface KeywordWorkflowInput {
@@ -35,43 +39,37 @@ export interface KeywordWorkflowDependencies {
 const defaultDecide = async (
   inputs: ReadonlyArray<import("./specs/keywords").KeywordOpportunityInput>,
 ): Promise<DecisionBatchReport> => {
-  if (!process.env.TYPESAFE_API_KEY) {
-    throw new Error("TYPESAFE_API_KEY is not set; keyword workflow decisions use Jev.");
-  }
   const layer = TypeSafeDecisionModel.model("jev-latest").pipe(
     Layer.provide(TypeSafeClient.layerConfig()),
     Layer.provide(FetchHttpClient.layer),
   );
   return Effect.runPromise(
-    runDecisions({ family: keywordFamily, inputs, model: "jev-latest", threshold: 0.7 }).pipe(
-      Effect.provide(layer),
-    ),
+    Effect.gen(function* () {
+      yield* Config.Redacted("TYPESAFE_API_KEY");
+      return yield* runDecisions({
+        family: keywordFamily,
+        inputs,
+        model: "jev-latest",
+        threshold: 0.7,
+      });
+    }).pipe(Effect.provide(layer)),
   );
 };
 
 const promptFor = (
   evidence: ReturnType<typeof collectWorkflowEvidence>,
   options: WorkflowTargetOptions,
-): string => `You are running PageGraph's research.keywords workflow.
-
-Use the content skill. Treat the supplied project evidence as the deterministic baseline. Search
-Executor's live catalog first, then compose whichever current SEO integrations best establish query
-demand, SERP intent, and page ownership. Do not assume fixed provider or tool names. A typical
-starting point is to call executor.search for keyword, Search Console, Bing, OpenSEO, or DataForSEO
-capabilities and then execute the relevant tools. You must use at least one discovered Executor tool.
-
-Return only one JSON object with this shape:
-{"summary":"...","opportunities":[{"query":"...","intent":"...","rationale":"...","demand":0,"candidates":[{"path":"/...","title":"...","excerpt":"..."}],"evidence":["tool/result citation"]}]}
-
-Market: ${options.market ?? "unspecified"}
-Language: ${options.language ?? "unspecified"}
-Refresh requested: ${options.refresh}
-Interactive input allowed: ${options.input}
-${options.input ? "Ask a focused question only when the workflow cannot proceed responsibly." : "Do not ask questions, request permissions, or create interactive forms; fail clearly if required input is missing."}
-Seed queries: ${JSON.stringify(options.queries)}
-Deterministic evidence:
-${JSON.stringify(evidence)}
-`;
+): string =>
+  TextTemplate.from(researchPromptSource)
+    .values({
+      stateSchema: JSON.stringify(Schema.toJsonSchemaDocument(KeywordResearchStateSchema)),
+      market: options.market ?? "unspecified",
+      language: options.language ?? "unspecified",
+      refresh: options.refresh,
+      queries: JSON.stringify(options.queries),
+      evidence: JSON.stringify(evidence),
+    })
+    .render();
 
 export const runKeywordWorkflow = async (
   input: KeywordWorkflowInput,
@@ -127,7 +125,7 @@ export const runKeywordWorkflow = async (
       decisions: [decisions],
       changes: {
         files: changedFiles(gitAtStart, gitAfter),
-        providerCalls: researched.executor.map((_value, index) => `executor:${index + 1}`),
+        providerCalls: researched.executor.calls.map((call) => call.tool),
       },
       result: state,
       opencode: { agent: "seo", sessionId: researched.sessionId, transcript: researched.transcript },

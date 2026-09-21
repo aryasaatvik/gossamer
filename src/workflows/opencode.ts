@@ -1,15 +1,17 @@
 import { resolve } from "node:path";
 
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 import type { SeoWorkflowOpenCodeConfig } from "../config";
+import type { ExecutorEvidence, ExecutorEvidenceRecord } from "./model";
 import { KeywordResearchStateSchema, type KeywordResearchStateInput } from "./specs/keywords";
 
 export interface WorkflowHostResult {
   readonly state: KeywordResearchStateInput;
   readonly sessionId: string;
   readonly transcript: unknown;
-  readonly executor: ReadonlyArray<unknown>;
+  readonly executor: ExecutorEvidence;
 }
 
 export interface WorkflowHost {
@@ -33,23 +35,25 @@ const parseModel = (reference: string): { readonly provider: string; readonly id
 
 const decodeState = Schema.decodeUnknownSync(KeywordResearchStateSchema);
 
-const jsonCandidates = (value: unknown, output: Array<string>): void => {
-  if (typeof value === "string") {
-    if (value.includes("{") && value.includes("}")) output.push(value);
-    return;
-  }
-  if (Array.isArray(value)) {
-    for (const item of value) jsonCandidates(item, output);
-    return;
-  }
-  if (value !== null && typeof value === "object") {
-    for (const child of Object.values(value)) jsonCandidates(child, output);
-  }
-};
+const TextPartSchema = Schema.Struct({ type: Schema.Literal("text"), text: Schema.String });
+const AssistantMessageSchema = Schema.Struct({
+  type: Schema.Literal("assistant"),
+  content: Schema.Array(Schema.Unknown),
+});
+const TranscriptSchema = Schema.Struct({ messages: Schema.Array(Schema.Unknown) });
+const decodeTextPart = Schema.decodeUnknownOption(TextPartSchema);
+const decodeAssistantMessage = Schema.decodeUnknownOption(AssistantMessageSchema);
+const decodeTranscript = Schema.decodeUnknownSync(TranscriptSchema);
 
 const parseState = (transcript: unknown): KeywordResearchStateInput => {
-  const candidates: Array<string> = [];
-  jsonCandidates(transcript, candidates);
+  const candidates = decodeTranscript(transcript).messages.flatMap((message) => {
+    const assistant = decodeAssistantMessage(message);
+    if (Option.isNone(assistant)) return [];
+    return assistant.value.content.flatMap((part) => {
+      const text = decodeTextPart(part);
+      return Option.isSome(text) && text.value.text.includes("{") ? [text.value.text] : [];
+    });
+  });
   for (const text of candidates.reverse()) {
     const start = text.indexOf("{");
     const end = text.lastIndexOf("}");
@@ -63,33 +67,27 @@ const parseState = (transcript: unknown): KeywordResearchStateInput => {
   throw new Error("The SEO agent did not return a valid keyword-research JSON object.");
 };
 
-interface ToolPart {
-  readonly type: "tool";
-  readonly id: string;
-  readonly name: string;
-  readonly state: { readonly status: string; readonly input?: unknown; readonly content?: unknown };
-}
-
-const isToolPart = (value: unknown): value is ToolPart => {
-  if (value === null || typeof value !== "object") return false;
-  const record = value as Record<string, unknown>;
-  return (
-    record["type"] === "tool" &&
-    typeof record["id"] === "string" &&
-    typeof record["name"] === "string" &&
-    record["state"] !== null &&
-    typeof record["state"] === "object"
-  );
-};
+const ToolPartSchema = Schema.Struct({
+  type: Schema.Literal("tool"),
+  id: Schema.String,
+  name: Schema.String,
+  state: Schema.Struct({
+    status: Schema.String,
+    input: Schema.optionalKey(Schema.Unknown),
+    content: Schema.optionalKey(Schema.Unknown),
+  }),
+});
+type ToolPart = typeof ToolPartSchema.Type;
+const decodeToolPart = Schema.decodeUnknownOption(ToolPartSchema);
 
 const toolParts = (transcript: unknown): ReadonlyArray<ToolPart> => {
-  if (transcript === null || typeof transcript !== "object") return [];
-  const messages = (transcript as Record<string, unknown>)["messages"];
-  if (!Array.isArray(messages)) return [];
-  return messages.flatMap((message) => {
-    if (message === null || typeof message !== "object") return [];
-    const content = (message as Record<string, unknown>)["content"];
-    return Array.isArray(content) ? content.filter(isToolPart) : [];
+  return decodeTranscript(transcript).messages.flatMap((message) => {
+    const assistant = decodeAssistantMessage(message);
+    if (Option.isNone(assistant)) return [];
+    return assistant.value.content.flatMap((part) => {
+      const decoded = decodeToolPart(part);
+      return Option.isSome(decoded) ? [decoded.value] : [];
+    });
   });
 };
 
@@ -105,10 +103,17 @@ const toolText = (value: unknown): string => {
 const pathsIn = (value: unknown): ReadonlyArray<string> =>
   [...toolText(value).matchAll(/tools\.([A-Za-z0-9_.-]+)/g)].map((match) => match[1] ?? "").filter(Boolean);
 
-export const collectExecutorCalls = (transcript: unknown): ReadonlyArray<unknown> => {
+const evidenceRecord = (part: ToolPart): ExecutorEvidenceRecord => ({
+  tool: part.name,
+  input: part.state.input ?? null,
+  output: part.state.content ?? null,
+});
+
+export const collectExecutorEvidence = (transcript: unknown): ExecutorEvidence => {
   const parts = toolParts(transcript);
   const discovered = new Set<string>();
-  const records: Array<unknown> = [];
+  const searches: Array<ExecutorEvidenceRecord> = [];
+  const calls: Array<ExecutorEvidenceRecord> = [];
   for (const part of parts) {
     const inputPaths = pathsIn(part.state.input);
     const isSearch =
@@ -117,30 +122,30 @@ export const collectExecutorCalls = (transcript: unknown): ReadonlyArray<unknown
       inputPaths.some((path) => path === "executor.search");
     if (isSearch) {
       for (const path of pathsIn(part.state.content)) if (path !== "executor.search") discovered.add(path);
-      records.push(part);
+      searches.push(evidenceRecord(part));
       continue;
     }
     const directlyDiscovered = [...discovered].some(
       (path) => part.name === path || part.name === path.replaceAll(".", "_") || inputPaths.includes(path),
     );
-    if (directlyDiscovered) records.push(part);
+    if (directlyDiscovered) calls.push(evidenceRecord(part));
   }
-  return records;
+  return { searches, calls };
 };
 
-export const nonInteractiveEventError = (event: unknown, sessionId: string): Error | undefined => {
+export const interactionEventError = (event: unknown, sessionId: string): Error | undefined => {
   if (event === null || typeof event !== "object") return undefined;
   const record = event as Record<string, unknown>;
   const data = record["data"];
   if (data === null || typeof data !== "object") return undefined;
   const eventData = data as Record<string, unknown>;
   if (record["type"] === "permission.asked" && eventData["sessionID"] === sessionId) {
-    return new Error("OpenCode requested permission during a --no-input workflow.");
+    return new Error("OpenCode requested permission; embedded PageGraph workflows are noninteractive.");
   }
   if (record["type"] === "form.created") {
     const form = eventData["form"];
     if (form !== null && typeof form === "object" && (form as Record<string, unknown>)["sessionID"] === sessionId) {
-      return new Error("OpenCode requested interactive input during a --no-input workflow.");
+      return new Error("OpenCode requested a form; embedded PageGraph workflows are noninteractive.");
     }
   }
   return undefined;
@@ -150,7 +155,6 @@ const waitForIdle = async (
   host: EmbeddedHost,
   sessionId: string,
   timeoutMs: number,
-  input: boolean,
 ): Promise<void> => {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -159,8 +163,8 @@ const waitForIdle = async (
       { sessionID: sessionId, follow: true },
       { signal: controller.signal },
     )) {
-      const inputError = input ? undefined : nonInteractiveEventError(event, sessionId);
-      if (inputError !== undefined) throw inputError;
+      const interactionError = interactionEventError(event, sessionId);
+      if (interactionError !== undefined) throw interactionError;
       if (event.type === "session.execution.succeeded" && event.data.sessionID === sessionId) return;
       if (event.type === "session.execution.failed" && event.data.sessionID === sessionId) {
         throw new Error(`OpenCode session failed: ${JSON.stringify(event.data.error)}`);
@@ -216,10 +220,10 @@ export const acquireWorkflowHost = async (options: {
           text: prompt,
           skills: [{ id: "content" }],
         });
-        await waitForIdle(host, session.id, options.timeoutMs ?? 180_000, workflowOptions.input);
+        await waitForIdle(host, session.id, options.timeoutMs ?? 180_000);
         const transcript = await host.sessions.export({ sessionID: session.id, sanitize: false });
-        const calls = collectExecutorCalls(transcript);
-        if (calls.length < 2) {
+        const executorEvidence = collectExecutorEvidence(transcript);
+        if (executorEvidence.searches.length === 0 || executorEvidence.calls.length === 0) {
           throw new Error(
             "The SEO agent returned without searching Executor and calling a discovered tool.",
           );
@@ -228,7 +232,7 @@ export const acquireWorkflowHost = async (options: {
           state: parseState(transcript),
           sessionId: session.id,
           transcript,
-          executor: calls,
+          executor: executorEvidence,
         };
       },
       close: () => host.close(),
