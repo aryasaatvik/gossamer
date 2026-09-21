@@ -215,7 +215,7 @@ export const acquireWorkflowHost = async (options: {
         await host.sessions.prompt({
           sessionID: session.id,
           text: prompt,
-          skills: [{ id: "content" }],
+          skills: [{ id: "keyword-research" }],
         });
         await waitForIdle(host, session.id, options.timeoutMs ?? 180_000);
         const transcript = await host.sessions.export({ sessionID: session.id, sanitize: false });

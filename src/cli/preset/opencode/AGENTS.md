@@ -1,4 +1,5 @@
 # PageGraph SEO
 
-Use the seo agent for PageGraph workflows. Preserve project instructions, cite repository and
-provider evidence, and use Executor catalog search before choosing live SEO tools.
+Use the seo agent for PageGraph workflows. Preserve the consumer repository's instructions and
+product truth. Use only the workflow skills attached by PageGraph, cite repository and provider
+evidence, and search Executor before choosing live SEO tools.

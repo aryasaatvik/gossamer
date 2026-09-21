@@ -9,9 +9,10 @@ import * as Flag from "effect/unstable/cli/Flag";
 import presetAgents from "../preset/opencode/AGENTS.md" with { type: "text" };
 import presetSeoAgent from "../preset/opencode/agents/seo.md" with { type: "text" };
 import presetOpenCode from "../preset/opencode/opencode.jsonc" with { type: "text" };
-import presetAuthoritySkill from "../preset/opencode/skills/authority/SKILL.md" with { type: "text" };
-import presetContentSkill from "../preset/opencode/skills/content/SKILL.md" with { type: "text" };
-import presetTechnicalSkill from "../preset/opencode/skills/technical/SKILL.md" with { type: "text" };
+import presetKeywordResearchExecutor from "../preset/opencode/skills/keyword-research/references/executor.md" with {
+  type: "text",
+};
+import presetKeywordResearchSkill from "../preset/opencode/skills/keyword-research/SKILL.md" with { type: "text" };
 import presetGitignore from "../preset/gitignore.txt" with { type: "text" };
 import { inspectGit } from "../../workflows/git";
 import { printJson, printText, SeoCliError } from "../output";
@@ -31,9 +32,9 @@ const PRESET: Readonly<Record<string, string>> = {
   ".pagegraph/opencode/opencode.jsonc": presetOpenCode,
   ".pagegraph/opencode/AGENTS.md": presetAgents,
   ".pagegraph/opencode/agents/seo.md": presetSeoAgent,
-  ".pagegraph/opencode/skills/content/SKILL.md": presetContentSkill,
-  ".pagegraph/opencode/skills/technical/SKILL.md": presetTechnicalSkill,
-  ".pagegraph/opencode/skills/authority/SKILL.md": presetAuthoritySkill,
+  ".pagegraph/opencode/skills/keyword-research/SKILL.md": presetKeywordResearchSkill,
+  ".pagegraph/opencode/skills/keyword-research/references/executor.md":
+    presetKeywordResearchExecutor,
 };
 
 const repositoryRoot = (): string => {
@@ -55,7 +56,10 @@ export const initCommand = Command.make("init", {
 }).pipe(
   Command.withDescription("Scaffold a user-owned PageGraph OpenCode SEO preset"),
   Command.withExamples([
-    { command: "pagegraph init", description: "Create .pagegraph/opencode without overwriting files" },
+    {
+      command: "pagegraph init",
+      description: "Create .pagegraph/opencode without overwriting files",
+    },
     { command: "pagegraph init --dry-run --json", description: "Preview the scaffold as JSON" },
   ]),
   Command.withHandler(

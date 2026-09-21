@@ -9,7 +9,8 @@ import { afterEach, describe, expect, it } from "vitest";
 const cli = fileURLToPath(new URL("../../src/cli/bin.ts", import.meta.url));
 const directories: Array<string> = [];
 afterEach(() => {
-  for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true });
+  for (const directory of directories.splice(0))
+    rmSync(directory, { recursive: true, force: true });
 });
 
 const run = (cwd: string, args: ReadonlyArray<string>) =>
@@ -27,6 +28,12 @@ describe("pagegraph init", () => {
     expect(run(root, []).status).toBe(0);
     const config = join(root, ".pagegraph/opencode/opencode.jsonc");
     expect(readFileSync(config, "utf8")).toContain("Executor plugin");
-    expect(run(root, []).stdout).toContain("Kept 7 existing file(s)");
+    expect(readFileSync(join(root, ".pagegraph/opencode/agents/seo.md"), "utf8")).toContain(
+      "Research is read-only",
+    );
+    expect(
+      readFileSync(join(root, ".pagegraph/opencode/skills/keyword-research/SKILL.md"), "utf8"),
+    ).toContain("Executor Starters");
+    expect(run(root, []).stdout).toContain("Kept 6 existing file(s)");
   });
 });
