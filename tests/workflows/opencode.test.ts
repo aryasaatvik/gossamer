@@ -8,6 +8,7 @@ import {
   assertWorkflowSkillsAvailable,
   collectExecutorEvidence,
   interactionEventError,
+  waitForActiveExecutorPlugin,
 } from "../../src/workflows/opencode";
 
 const tool = (id: string, name: string, input: unknown, content: unknown) => ({
@@ -114,5 +115,44 @@ describe("OpenCode workflow evidence", () => {
         "session-1",
       ),
     ).toBeUndefined();
+  });
+
+  it("waits for the configured Executor plugin to become active", async () => {
+    const responses = [
+      [],
+      [{ source: { type: "local", path: "/plugins/executor" }, state: { status: "loading" } }],
+      [{ source: { type: "local", path: "/plugins/executor" }, state: { status: "active" } }],
+    ];
+    let calls = 0;
+
+    await expect(
+      waitForActiveExecutorPlugin({
+        list: async () => responses[Math.min(calls++, responses.length - 1)]!,
+        sleep: async () => {},
+      }),
+    ).resolves.toBe(true);
+    expect(calls).toBe(3);
+  });
+
+  it("fails closed at the activation deadline", async () => {
+    let time = 0;
+    let calls = 0;
+
+    await expect(
+      waitForActiveExecutorPlugin({
+        list: async () => {
+          calls += 1;
+          return [];
+        },
+        timeoutMs: 500,
+        pollMs: 200,
+        now: () => time,
+        sleep: async (milliseconds) => {
+          time += milliseconds;
+        },
+      }),
+    ).resolves.toBe(false);
+    expect(time).toBe(500);
+    expect(calls).toBe(3);
   });
 });
