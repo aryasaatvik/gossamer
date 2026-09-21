@@ -84,13 +84,21 @@ describe("OpenCode workflow evidence", () => {
       "search",
       "codemode",
       { code: 'return tools.executor.search({ query: "keywords" })' },
-      [{ type: "text", text: "tools.open_seo.cached.keywordIdeas\ntools.dataforseo.serp.live" }],
+      [
+        {
+          type: "text",
+          text: JSON.stringify({
+            items: [{ path: "open_seo.cached.keywordIdeas" }, { path: "dataforseo.serp.live" }],
+            metadata: "tools.files.read is available outside this search result",
+          }),
+        },
+      ],
     );
     const discovered = tool(
       "provider",
       "codemode",
       {
-        code: 'const path = "open_seo.cached.keywordIdeas"; return call(path, { query: "email api" })',
+        code: 'return tools["open_seo.cached.keywordIdeas"]({ query: "email api" })',
       },
       [{ type: "text", text: "result" }],
     );
@@ -120,13 +128,13 @@ describe("OpenCode workflow evidence", () => {
       "search-1",
       "codemode",
       { code: 'return tools.executor.search({ query: "keywords" })' },
-      [{ type: "text", text: "tools.open_seo.cached.keywordIdeas" }],
+      [{ type: "text", text: '{"items":[{"path":"open_seo.cached.keywordIdeas"}]}' }],
     );
     const second = tool(
       "search-2",
       "codemode",
       { code: 'return tools.executor.search({ query: "serps" })' },
-      [{ type: "text", text: "tools.dataforseo.serp.live" }],
+      [{ type: "text", text: '{"items":[{"path":"dataforseo.serp.live"}]}' }],
     );
 
     expect(
