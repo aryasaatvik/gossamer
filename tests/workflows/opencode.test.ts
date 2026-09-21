@@ -8,7 +8,9 @@ import {
   assertWorkflowSkillsAvailable,
   collectExecutorEvidence,
   interactionEventError,
+  parseWorkflowStateWithRepair,
   waitForActiveExecutorPlugin,
+  waitForIdle,
 } from "../../src/workflows/opencode";
 
 const tool = (id: string, name: string, input: unknown, content: unknown) => ({
@@ -20,6 +22,42 @@ const tool = (id: string, name: string, input: unknown, content: unknown) => ({
 });
 
 describe("OpenCode workflow evidence", () => {
+  it("repairs a completed turn that omitted its workflow JSON", async () => {
+    const invalid = {
+      messages: [{ type: "assistant", content: [{ type: "text", text: "Done." }] }],
+    };
+    const repaired = {
+      messages: [
+        ...invalid.messages,
+        { type: "assistant", content: [{ type: "text", text: '{"items":[]}' }] },
+      ],
+    };
+    let repairs = 0;
+
+    await expect(
+      parseWorkflowStateWithRepair(invalid, async () => {
+        repairs += 1;
+        return repaired;
+      }),
+    ).resolves.toEqual({ state: { items: [] }, transcript: repaired });
+    expect(repairs).toBe(1);
+  });
+
+  it("does not start a repair turn when the workflow JSON is already valid", async () => {
+    const transcript = {
+      messages: [{ type: "assistant", content: [{ type: "text", text: '{"items":[]}' }] }],
+    };
+    let repairs = 0;
+
+    await expect(
+      parseWorkflowStateWithRepair(transcript, async () => {
+        repairs += 1;
+        return transcript;
+      }),
+    ).resolves.toEqual({ state: { items: [] }, transcript });
+    expect(repairs).toBe(0);
+  });
+
   it("requires the attached workflow skill and its Executor reference", () => {
     const root = mkdtempSync(join(tmpdir(), "pagegraph-opencode-preset-"));
     try {
@@ -154,5 +192,33 @@ describe("OpenCode workflow evidence", () => {
     ).resolves.toBe(false);
     expect(time).toBe(500);
     expect(calls).toBe(3);
+  });
+
+  it("reports the workflow deadline instead of the SDK transport wrapper", async () => {
+    const host = {
+      sessions: {
+        log: (_input: unknown, options: { signal: AbortSignal }) => ({
+          async *[Symbol.asyncIterator]() {
+            await new Promise<void>((_resolve, reject) => {
+              options.signal.addEventListener("abort", () => reject(new Error("Transport")), {
+                once: true,
+              });
+            });
+            if (false) yield undefined;
+          },
+        }),
+      },
+    };
+
+    await expect(waitForIdle(host as never, "session-1", { timeoutMs: 5 })).rejects.toThrow(
+      "OpenCode session did not complete within 5ms.",
+    );
+
+    await expect(
+      waitForIdle(host as never, "session-1", {
+        timeoutMs: 5,
+        configuredTimeoutMs: 180_000,
+      }),
+    ).rejects.toThrow("OpenCode session did not complete within 180000ms.");
   });
 });
