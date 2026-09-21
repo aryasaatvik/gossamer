@@ -30,6 +30,34 @@ export interface WorkflowHost {
 
 type EmbeddedHost = Awaited<ReturnType<typeof import("@opencode/sdk").OpenCode.create>>;
 
+interface PluginListItem {
+  readonly source: unknown;
+  readonly state: { readonly status: string };
+}
+
+const isActiveExecutorPlugin = (plugin: PluginListItem): boolean =>
+  JSON.stringify(plugin.source).toLowerCase().includes("executor") &&
+  plugin.state.status === "active";
+
+export const waitForActiveExecutorPlugin = async (options: {
+  readonly list: () => Promise<ReadonlyArray<PluginListItem>>;
+  readonly timeoutMs?: number;
+  readonly pollMs?: number;
+  readonly sleep?: (milliseconds: number) => Promise<void>;
+}): Promise<boolean> => {
+  const timeoutMs = options.timeoutMs ?? 30_000;
+  const pollMs = options.pollMs ?? 250;
+  const sleep =
+    options.sleep ??
+    ((milliseconds: number) => new Promise<void>((resolve) => setTimeout(resolve, milliseconds)));
+  const deadline = Date.now() + timeoutMs;
+  do {
+    if ((await options.list()).some(isActiveExecutorPlugin)) return true;
+    if (Date.now() >= deadline) return false;
+    await sleep(pollMs);
+  } while (true);
+};
+
 export const assertWorkflowSkillsAvailable = (
   configDirectory: string,
   skills: ReadonlyArray<string>,
@@ -246,13 +274,10 @@ export const acquireWorkflowHost = async (options: {
   });
   try {
     const location = { directory: options.root };
-    const plugins = await host.plugin.list({ location });
-    const executor = plugins.data.find(
-      (plugin) =>
-        JSON.stringify(plugin.source).toLowerCase().includes("executor") &&
-        plugin.state.status === "active",
-    );
-    if (executor === undefined) {
+    const executorReady = await waitForActiveExecutorPlugin({
+      list: async () => (await host.plugin.list({ location })).data,
+    });
+    if (!executorReady) {
       throw new Error(
         `No active Executor plugin was discovered in ${configDirectory}; agentic SEO workflows require Executor.`,
       );
