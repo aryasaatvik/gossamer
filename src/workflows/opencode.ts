@@ -188,6 +188,34 @@ const pathsIn = (value: unknown): ReadonlyArray<string> =>
     .map((match) => match[1] ?? "")
     .filter(Boolean);
 
+const toolPathPattern = /^[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)+$/;
+
+const pathsInSearchOutput = (value: unknown): ReadonlyArray<string> => {
+  const found = new Set(pathsIn(value));
+  const visit = (current: unknown): void => {
+    if (typeof current === "string") {
+      const candidate = current.startsWith("tools.") ? current.slice("tools.".length) : current;
+      if (toolPathPattern.test(candidate)) found.add(candidate);
+      try {
+        visit(JSON.parse(current));
+      } catch {
+        // Search output can include ordinary prose alongside structured results.
+      }
+      return;
+    }
+    if (Array.isArray(current)) {
+      for (const item of current) visit(item);
+      return;
+    }
+    if (current === null || typeof current !== "object") return;
+    const record = current as Record<string, unknown>;
+    if (typeof record["path"] === "string") visit(record["path"]);
+    for (const nested of Object.values(record)) visit(nested);
+  };
+  visit(value);
+  return [...found];
+};
+
 const evidenceRecord = (part: ToolPart): ExecutorEvidenceRecord => ({
   tool: part.name,
   input: part.state.input ?? null,
@@ -206,7 +234,7 @@ export const collectExecutorEvidence = (transcript: unknown): ExecutorEvidence =
       part.name === "executor.search" ||
       inputPaths.some((path) => path === "executor.search");
     if (isSearch) {
-      for (const path of pathsIn(part.state.content)) {
+      for (const path of pathsInSearchOutput(part.state.content)) {
         if (path !== "executor.search") discovered.add(path);
       }
       searches.push(evidenceRecord(part));
@@ -388,7 +416,7 @@ export const acquireWorkflowHost = async (options: {
         const result = await complete(session.id, prompt, workflowOptions);
         if (result.executor.searches.length === 0 || result.executor.calls.length === 0) {
           throw new Error(
-            "The SEO agent returned without searching Executor and calling a discovered tool.",
+            `The SEO agent returned without the required Executor evidence (searches: ${result.executor.searches.length}, calls: ${result.executor.calls.length}).`,
           );
         }
         return result;
