@@ -118,14 +118,7 @@ describe("OpenCode workflow evidence", () => {
   });
 
   it("waits for the configured Executor plugin to become active", async () => {
-    const responses: ReadonlyArray<
-      | ReadonlyArray<{
-          source: unknown;
-          state: { status: string };
-        }>
-      | Error
-    > = [
-      new Error("embedded router is starting"),
+    const responses = [
       [],
       [{ source: { type: "local", path: "/plugins/executor" }, state: { status: "loading" } }],
       [{ source: { type: "local", path: "/plugins/executor" }, state: { status: "active" } }],
@@ -134,14 +127,32 @@ describe("OpenCode workflow evidence", () => {
 
     await expect(
       waitForActiveExecutorPlugin({
-        list: async () => {
-          const response = responses[Math.min(calls++, responses.length - 1)]!;
-          if (response instanceof Error) throw response;
-          return response;
-        },
+        list: async () => responses[Math.min(calls++, responses.length - 1)]!,
         sleep: async () => {},
       }),
     ).resolves.toBe(true);
-    expect(calls).toBe(4);
+    expect(calls).toBe(3);
+  });
+
+  it("fails closed at the activation deadline", async () => {
+    let time = 0;
+    let calls = 0;
+
+    await expect(
+      waitForActiveExecutorPlugin({
+        list: async () => {
+          calls += 1;
+          return [];
+        },
+        timeoutMs: 500,
+        pollMs: 200,
+        now: () => time,
+        sleep: async (milliseconds) => {
+          time += milliseconds;
+        },
+      }),
+    ).resolves.toBe(false);
+    expect(time).toBe(500);
+    expect(calls).toBe(3);
   });
 });

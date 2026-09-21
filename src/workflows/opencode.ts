@@ -44,23 +44,21 @@ export const waitForActiveExecutorPlugin = async (options: {
   readonly timeoutMs?: number;
   readonly pollMs?: number;
   readonly sleep?: (milliseconds: number) => Promise<void>;
+  readonly now?: () => number;
 }): Promise<boolean> => {
   const timeoutMs = options.timeoutMs ?? 30_000;
   const pollMs = options.pollMs ?? 250;
+  const now = options.now ?? Date.now;
   const sleep =
     options.sleep ??
     ((milliseconds: number) => new Promise<void>((resolve) => setTimeout(resolve, milliseconds)));
-  const deadline = Date.now() + timeoutMs;
+  const deadline = now() + timeoutMs;
   do {
-    try {
-      if ((await options.list()).some(isActiveExecutorPlugin)) return true;
-    } catch {
-      // The embedded router can briefly reject plugin-list requests while its
-      // configuration and plugin registry are converging. Treat that as the
-      // same pending state as an empty or loading registry.
-    }
-    if (Date.now() >= deadline) return false;
-    await sleep(pollMs);
+    if ((await options.list()).some(isActiveExecutorPlugin)) return true;
+    const remaining = deadline - now();
+    if (remaining <= 0) return false;
+    await sleep(Math.min(pollMs, remaining));
+    if (now() >= deadline) return false;
   } while (true);
 };
 
