@@ -111,7 +111,7 @@ const decodeTextPart = Schema.decodeUnknownOption(TextPartSchema);
 const decodeAssistantMessage = Schema.decodeUnknownOption(AssistantMessageSchema);
 const decodeTranscript = Schema.decodeUnknownSync(TranscriptSchema);
 
-const parseState = (transcript: unknown): unknown => {
+export const parseWorkflowState = (transcript: unknown): unknown => {
   const candidates = decodeTranscript(transcript).messages.flatMap((message) => {
     const assistant = decodeAssistantMessage(message);
     if (Option.isNone(assistant)) return [];
@@ -132,6 +132,24 @@ const parseState = (transcript: unknown): unknown => {
   }
   throw new Error("The SEO agent did not return a valid workflow JSON object.");
 };
+
+export const parseWorkflowStateWithRepair = async (
+  transcript: unknown,
+  repair: () => Promise<unknown>,
+): Promise<{ readonly state: unknown; readonly transcript: unknown }> => {
+  try {
+    return { state: parseWorkflowState(transcript), transcript };
+  } catch {
+    const repaired = await repair();
+    return { state: parseWorkflowState(repaired), transcript: repaired };
+  }
+};
+
+const STATE_REPAIR_PROMPT = [
+  "Your previous turn did not end with the workflow JSON object requested by the original prompt.",
+  "Do not call tools, add commentary, or wrap the response in Markdown.",
+  "Return only one valid JSON object matching the original JSON Schema, using the evidence already collected.",
+].join(" ");
 
 const ToolPartSchema = Schema.Struct({
   type: Schema.Literal("tool"),
@@ -232,7 +250,7 @@ export const interactionEventError = (event: unknown, sessionId: string): Error 
   return undefined;
 };
 
-const waitForIdle = async (
+export const waitForIdle = async (
   host: EmbeddedHost,
   sessionId: string,
   timeoutMs: number,
@@ -257,6 +275,11 @@ const waitForIdle = async (
         throw new Error(`OpenCode session was interrupted: ${event.data.reason}.`);
       }
     }
+  } catch (cause) {
+    if (controller.signal.aborted) {
+      throw new Error(`OpenCode session did not complete within ${timeoutMs}ms.`, { cause });
+    }
+    throw cause;
   } finally {
     clearTimeout(timer);
   }
@@ -305,19 +328,30 @@ export const acquireWorkflowHost = async (options: {
         text: prompt,
         skills: workflowOptions.skills.map((id) => ({ id })),
       });
-      const cursor = await waitForIdle(
+      let cursor = await waitForIdle(
         host,
         sessionId,
         options.timeoutMs ?? 180_000,
         cursors.get(sessionId),
       );
       cursors.set(sessionId, cursor);
-      const transcript = await host.sessions.export({ sessionID: sessionId, sanitize: false });
+      let transcript = await host.sessions.export({ sessionID: sessionId, sanitize: false });
+      const parsed = await parseWorkflowStateWithRepair(transcript, async () => {
+        await host.sessions.update({
+          sessionID: sessionId,
+          permissions: [{ action: "*", resource: "*", effect: "deny" }],
+        });
+        await host.sessions.prompt({ sessionID: sessionId, text: STATE_REPAIR_PROMPT });
+        cursor = await waitForIdle(host, sessionId, options.timeoutMs ?? 180_000, cursor);
+        cursors.set(sessionId, cursor);
+        transcript = await host.sessions.export({ sessionID: sessionId, sanitize: false });
+        return transcript;
+      });
       return {
-        state: parseState(transcript),
+        state: parsed.state,
         sessionId,
-        transcript,
-        executor: collectExecutorEvidence(transcript),
+        transcript: parsed.transcript,
+        executor: collectExecutorEvidence(parsed.transcript),
       };
     };
 
