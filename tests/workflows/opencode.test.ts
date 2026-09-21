@@ -118,7 +118,14 @@ describe("OpenCode workflow evidence", () => {
   });
 
   it("waits for the configured Executor plugin to become active", async () => {
-    const responses = [
+    const responses: ReadonlyArray<
+      | ReadonlyArray<{
+          source: unknown;
+          state: { status: string };
+        }>
+      | Error
+    > = [
+      new Error("embedded router is starting"),
       [],
       [{ source: { type: "local", path: "/plugins/executor" }, state: { status: "loading" } }],
       [{ source: { type: "local", path: "/plugins/executor" }, state: { status: "active" } }],
@@ -127,10 +134,14 @@ describe("OpenCode workflow evidence", () => {
 
     await expect(
       waitForActiveExecutorPlugin({
-        list: async () => responses[Math.min(calls++, responses.length - 1)]!,
+        list: async () => {
+          const response = responses[Math.min(calls++, responses.length - 1)]!;
+          if (response instanceof Error) throw response;
+          return response;
+        },
         sleep: async () => {},
       }),
     ).resolves.toBe(true);
-    expect(calls).toBe(3);
+    expect(calls).toBe(4);
   });
 });
