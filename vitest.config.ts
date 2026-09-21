@@ -1,6 +1,6 @@
 import { defineConfig } from "vitest/config";
 
-import { textImports } from "./scripts/text-imports.ts";
+import { textImports } from "./scripts/text-imports.js";
 
 export default defineConfig({
   plugins: [textImports()],
