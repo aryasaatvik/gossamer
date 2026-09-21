@@ -218,7 +218,7 @@ describe("workflow runner", () => {
         acquireHost: async () => ({
           model: { provider: "test", id: "model" },
           research: async (_prompt, workflowOptions) => {
-            expect(workflowOptions.skills).toEqual(["content"]);
+            expect(workflowOptions.skills).toEqual(["keyword-research"]);
             expect(workflowOptions.permissions).toEqual(
               expect.arrayContaining([expect.objectContaining({ action: "edit", effect: "deny" })]),
             );

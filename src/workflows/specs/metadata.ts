@@ -10,7 +10,7 @@ const MetadataState = Schema.Struct({
 
 export const metadataWorkflow = defineWorkflow({
   id: "improve.metadata",
-  skills: ["content"],
+  skills: ["metadata-improvement"],
   mutatesFiles: true,
   stateSchema: MetadataState,
   decisionInputs: (state) => state.items,

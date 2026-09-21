@@ -7,7 +7,19 @@ import type { DecisionBatchReport } from "../../decide/record";
 import { runDecisions, type DecisionFamily } from "../../decide/run";
 import type { WorkflowId } from "../model";
 
-export const WORKFLOW_SKILLS = ["content", "technical", "authority"] as const;
+export const WORKFLOW_SKILLS = [
+  "keyword-research",
+  "competitive-landscape",
+  "authority-research",
+  "serp-analysis",
+  "content-analysis",
+  "ai-search",
+  "site-architecture",
+  "content-improvement",
+  "metadata-improvement",
+  "schema",
+  "internal-linking",
+] as const;
 export type WorkflowSkill = (typeof WORKFLOW_SKILLS)[number];
 
 export interface WorkflowSpecDefinition<State, Input> {

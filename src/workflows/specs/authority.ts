@@ -10,7 +10,7 @@ const AuthorityState = Schema.Struct({
 
 export const authorityWorkflow = defineWorkflow({
   id: "research.authority",
-  skills: ["authority"],
+  skills: ["authority-research"],
   mutatesFiles: false,
   stateSchema: AuthorityState,
   decisionInputs: (state) => state.items,

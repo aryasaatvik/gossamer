@@ -10,7 +10,7 @@ const ContentState = Schema.Struct({
 
 export const contentWorkflow = defineWorkflow({
   id: "analyze.content",
-  skills: ["content"],
+  skills: ["content-analysis"],
   mutatesFiles: false,
   stateSchema: ContentState,
   decisionInputs: (state) => state.items,
@@ -21,7 +21,7 @@ export const contentWorkflow = defineWorkflow({
 
 export const improveContentWorkflow = defineWorkflow({
   id: "improve.content",
-  skills: ["content"],
+  skills: ["content-improvement"],
   mutatesFiles: true,
   stateSchema: ContentState,
   decisionInputs: (state) => state.items,

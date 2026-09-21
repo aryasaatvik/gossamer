@@ -74,7 +74,7 @@ const competitorFamily: DecisionFamily<Schema.Schema.Type<typeof CompetitorInput
 
 export const competitorsWorkflow = defineWorkflow({
   id: "research.competitors",
-  skills: ["content"],
+  skills: ["competitive-landscape"],
   mutatesFiles: false,
   stateSchema: CompetitorState,
   decisionInputs: (state) => state.items,

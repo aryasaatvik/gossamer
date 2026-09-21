@@ -71,7 +71,7 @@ const aiSearchFamily: DecisionFamily<Schema.Schema.Type<typeof AiSearchInput>> =
 
 export const aiSearchWorkflow = defineWorkflow({
   id: "analyze.ai-search",
-  skills: ["content", "technical"],
+  skills: ["ai-search"],
   mutatesFiles: false,
   stateSchema: AiSearchState,
   decisionInputs: (state) => state.items,

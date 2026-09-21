@@ -73,7 +73,7 @@ const architectureFamily: DecisionFamily<Schema.Schema.Type<typeof ArchitectureI
 
 export const architectureWorkflow = defineWorkflow({
   id: "plan.architecture",
-  skills: ["technical"],
+  skills: ["site-architecture"],
   mutatesFiles: false,
   stateSchema: ArchitectureState,
   decisionInputs: (state) => state.items,

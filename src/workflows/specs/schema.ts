@@ -78,7 +78,7 @@ const schemaFamily: DecisionFamily<Schema.Schema.Type<typeof SchemaInput>> = {
 
 export const schemaWorkflow = defineWorkflow({
   id: "improve.schema",
-  skills: ["technical"],
+  skills: ["schema"],
   mutatesFiles: true,
   stateSchema: SchemaState,
   decisionInputs: (state) => state.items,

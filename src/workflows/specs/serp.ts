@@ -10,7 +10,7 @@ const SerpState = Schema.Struct({
 
 export const serpWorkflow = defineWorkflow({
   id: "analyze.serp",
-  skills: ["content"],
+  skills: ["serp-analysis"],
   mutatesFiles: false,
   stateSchema: SerpState,
   decisionInputs: (state) => state.items,

@@ -24,7 +24,16 @@ const dirtyGitRepository = (): string => {
   execFileSync("git", ["add", "tracked.txt"], { cwd: root });
   execFileSync(
     "git",
-    ["-c", "user.name=PageGraph Test", "-c", "user.email=pagegraph@example.test", "commit", "--quiet", "-m", "init"],
+    [
+      "-c",
+      "user.name=PageGraph Test",
+      "-c",
+      "user.email=pagegraph@example.test",
+      "commit",
+      "--quiet",
+      "-m",
+      "init",
+    ],
     { cwd: root },
   );
   writeFileSync(join(root, "tracked.txt"), "after\n");
@@ -49,7 +58,7 @@ describe("pagegraph init", () => {
     expect(
       readFileSync(join(root, ".pagegraph/opencode/skills/keyword-research/SKILL.md"), "utf8"),
     ).toContain("Executor Starters");
-    expect(run(root, []).stdout).toContain("Kept 6 existing file(s)");
+    expect(run(root, []).stdout).toContain("Kept 26 existing file(s)");
   });
 
   it("refuses a dirty tree unless --allow-dirty is explicit", () => {
@@ -61,7 +70,9 @@ describe("pagegraph init", () => {
 
     const allowed = run(root, ["--allow-dirty", "--json"]);
     expect(allowed.status).toBe(0);
-    expect(JSON.parse(allowed.stdout).created).toContain(".pagegraph/opencode/skills/content/SKILL.md");
+    expect(JSON.parse(allowed.stdout).created).toContain(
+      ".pagegraph/opencode/skills/keyword-research/SKILL.md",
+    );
   });
 
   it("allows a dirty-tree preview without writing files", () => {
@@ -76,16 +87,31 @@ describe("pagegraph init", () => {
     const root = mkdtempSync(join(tmpdir(), "pagegraph-init-recipes-"));
     directories.push(root);
     expect(run(root, []).status).toBe(0);
-    const skill = (name: string) => readFileSync(join(root, `.pagegraph/opencode/skills/${name}/SKILL.md`), "utf8");
+    const skill = (name: string, file = "SKILL.md") =>
+      readFileSync(join(root, `.pagegraph/opencode/skills/${name}/${file}`), "utf8");
 
-    for (const name of ["content", "technical", "authority"]) {
-      const contents = skill(name);
-      expect(contents).toContain("tools.executor.search");
-      expect(contents).toContain("search({ query:");
-      expect(contents).toContain("non-exhaustive");
+    const names = [
+      "keyword-research",
+      "competitive-landscape",
+      "authority-research",
+      "serp-analysis",
+      "content-analysis",
+      "ai-search",
+      "site-architecture",
+      "content-improvement",
+      "metadata-improvement",
+      "schema",
+      "internal-linking",
+    ];
+    for (const name of names) {
+      expect(skill(name)).toContain("references/executor.md");
+      const executor = skill(name, "references/executor.md");
+      expect(executor).toContain("tools.executor.search");
+      expect(executor).toContain("search({ query:");
+      expect(executor).toContain("starting points");
     }
-    expect(skill("content")).toContain("Google Search Console");
-    expect(skill("technical")).toContain("Bing Webmaster");
-    expect(skill("authority")).toContain("backlink");
+    expect(skill("keyword-research", "references/executor.md")).toContain("Google Search Console");
+    expect(skill("site-architecture", "references/executor.md")).toContain("Bing Webmaster");
+    expect(skill("authority-research", "references/executor.md")).toContain("backlink");
   });
 });

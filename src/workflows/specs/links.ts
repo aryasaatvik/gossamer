@@ -72,7 +72,7 @@ const linksFamily: DecisionFamily<Schema.Schema.Type<typeof LinksInput>> = {
 
 export const linksWorkflow = defineWorkflow({
   id: "improve.links",
-  skills: ["technical"],
+  skills: ["internal-linking"],
   mutatesFiles: true,
   stateSchema: LinksState,
   decisionInputs: (state) => state.items,

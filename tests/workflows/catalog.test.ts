@@ -11,20 +11,17 @@ describe("workflow catalog", () => {
 
   it("declares the skill and mutation boundary for each workflow", () => {
     const expected = {
-      "research.keywords": { skills: ["content"], mutatesFiles: false },
-      "research.competitors": { skills: ["content"], mutatesFiles: false },
-      "research.authority": { skills: ["authority"], mutatesFiles: false },
-      "analyze.serp": { skills: ["content"], mutatesFiles: false },
-      "analyze.content": { skills: ["content"], mutatesFiles: false },
-      "analyze.ai-search": {
-        skills: ["content", "technical"],
-        mutatesFiles: false,
-      },
-      "plan.architecture": { skills: ["technical"], mutatesFiles: false },
-      "improve.content": { skills: ["content"], mutatesFiles: true },
-      "improve.metadata": { skills: ["content"], mutatesFiles: true },
-      "improve.schema": { skills: ["technical"], mutatesFiles: true },
-      "improve.links": { skills: ["technical"], mutatesFiles: true },
+      "research.keywords": { skills: ["keyword-research"], mutatesFiles: false },
+      "research.competitors": { skills: ["competitive-landscape"], mutatesFiles: false },
+      "research.authority": { skills: ["authority-research"], mutatesFiles: false },
+      "analyze.serp": { skills: ["serp-analysis"], mutatesFiles: false },
+      "analyze.content": { skills: ["content-analysis"], mutatesFiles: false },
+      "analyze.ai-search": { skills: ["ai-search"], mutatesFiles: false },
+      "plan.architecture": { skills: ["site-architecture"], mutatesFiles: false },
+      "improve.content": { skills: ["content-improvement"], mutatesFiles: true },
+      "improve.metadata": { skills: ["metadata-improvement"], mutatesFiles: true },
+      "improve.schema": { skills: ["schema"], mutatesFiles: true },
+      "improve.links": { skills: ["internal-linking"], mutatesFiles: true },
     } as const;
 
     for (const id of workflowIds) {
