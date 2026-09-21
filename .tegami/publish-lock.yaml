@@ -1,10 +1,10 @@
 core:changelogs:
-  - content: "---\npackages:\n  pagegraph:\n    type: patch\n---\n\n### Recover incomplete workflow results\n\nWhen an OpenCode turn collects Executor evidence but omits its final workflow JSON, PageGraph now\nruns one tool-free repair turn within the original deadline. Repair restores the session's prior\npermissions, and deadline failures report the configured timeout instead of an opaque transport\nerror.\n"
-    filename: 2026-09-21-workflow-result-repair.md
+  - content: "---\npackages:\n  pagegraph:\n    type: patch\n---\n\n### Attribute Executor evidence from structured search results\n\nPageGraph now recognizes tool identifiers returned in Executor search-result `path` fields, including\nJSON-encoded output, so valid provider calls satisfy the workflow evidence gate. Discovery stays\nlimited to those structured fields, preventing unrelated dotted metadata from authorizing a call.\n"
+    filename: 2026-09-21-executor-evidence-attribution.md
     v: 0.0.0
 core:packages:
   - changelogIds:
-      - 2026-09-21-workflow-result-repair.md
+      - 2026-09-21-executor-evidence-attribution.md
     id: npm:pagegraph
     updated: true
 npm:packages:
