@@ -45,7 +45,7 @@ export interface DecisionCounts {
 }
 
 /**
- * `pagegraph decide <family>` report. Every input appears exactly once across
+ * Internal decision-family report. Every input appears exactly once across
  * `resolved` and `review`; `verdicts` counts each family verdict.
  */
 export interface DecisionBatchReport {

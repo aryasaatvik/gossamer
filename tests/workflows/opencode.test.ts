@@ -21,7 +21,9 @@ describe("OpenCode workflow evidence", () => {
     const discovered = tool(
       "provider",
       "codemode",
-      { code: 'return tools.open_seo.cached.keywordIdeas({ query: "email api" })' },
+      {
+        code: 'const path = "open_seo.cached.keywordIdeas"; return call(path, { query: "email api" })',
+      },
       [{ type: "text", text: "result" }],
     );
     const unrelated = tool(

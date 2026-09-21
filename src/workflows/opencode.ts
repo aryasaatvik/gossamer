@@ -5,10 +5,9 @@ import * as Schema from "effect/Schema";
 
 import type { SeoWorkflowOpenCodeConfig } from "../config";
 import type { ExecutorEvidence, ExecutorEvidenceRecord } from "./model";
-import { KeywordResearchStateSchema, type KeywordResearchStateInput } from "./specs/keywords";
 
 export interface WorkflowHostResult {
-  readonly state: KeywordResearchStateInput;
+  readonly state: unknown;
   readonly sessionId: string;
   readonly transcript: unknown;
   readonly executor: ExecutorEvidence;
@@ -16,11 +15,27 @@ export interface WorkflowHostResult {
 
 export interface WorkflowHost {
   readonly model: { readonly provider: string; readonly id: string };
-  readonly researchKeywords: (prompt: string) => Promise<WorkflowHostResult>;
+  readonly research: (prompt: string, options: WorkflowPromptOptions) => Promise<WorkflowHostResult>;
+  readonly continue: (
+    sessionId: string,
+    prompt: string,
+    options: WorkflowPromptOptions,
+  ) => Promise<WorkflowHostResult>;
   readonly close: () => Promise<void>;
 }
 
 type EmbeddedHost = Awaited<ReturnType<typeof import("@opencode/sdk").OpenCode.create>>;
+
+export interface WorkflowPermissionRule {
+  readonly action: string;
+  readonly resource: string;
+  readonly effect: "allow" | "deny" | "ask";
+}
+
+export interface WorkflowPromptOptions {
+  readonly skills: ReadonlyArray<string>;
+  readonly permissions?: ReadonlyArray<WorkflowPermissionRule> | undefined;
+}
 
 const parseModel = (reference: string): { readonly provider: string; readonly id: string } => {
   const slash = reference.indexOf("/");
@@ -29,8 +44,6 @@ const parseModel = (reference: string): { readonly provider: string; readonly id
   }
   return { provider: reference.slice(0, slash), id: reference.slice(slash + 1) };
 };
-
-const decodeState = Schema.decodeUnknownSync(KeywordResearchStateSchema);
 
 const TextPartSchema = Schema.Struct({ type: Schema.Literal("text"), text: Schema.String });
 const AssistantMessageSchema = Schema.Struct({
@@ -42,7 +55,7 @@ const decodeTextPart = Schema.decodeUnknownOption(TextPartSchema);
 const decodeAssistantMessage = Schema.decodeUnknownOption(AssistantMessageSchema);
 const decodeTranscript = Schema.decodeUnknownSync(TranscriptSchema);
 
-const parseState = (transcript: unknown): KeywordResearchStateInput => {
+const parseState = (transcript: unknown): unknown => {
   const candidates = decodeTranscript(transcript).messages.flatMap((message) => {
     const assistant = decodeAssistantMessage(message);
     if (Option.isNone(assistant)) return [];
@@ -56,12 +69,12 @@ const parseState = (transcript: unknown): KeywordResearchStateInput => {
     const end = text.lastIndexOf("}");
     if (start === -1 || end <= start) continue;
     try {
-      return decodeState(JSON.parse(text.slice(start, end + 1)));
+      return JSON.parse(text.slice(start, end + 1));
     } catch {
-      // Continue to the previous text block: prompts can also contain JSON evidence.
+      // Continue to the previous assistant text block.
     }
   }
-  throw new Error("The SEO agent did not return a valid keyword-research JSON object.");
+  throw new Error("The SEO agent did not return a valid workflow JSON object.");
 };
 
 const ToolPartSchema = Schema.Struct({
@@ -77,8 +90,8 @@ const ToolPartSchema = Schema.Struct({
 type ToolPart = typeof ToolPartSchema.Type;
 const decodeToolPart = Schema.decodeUnknownOption(ToolPartSchema);
 
-const toolParts = (transcript: unknown): ReadonlyArray<ToolPart> => {
-  return decodeTranscript(transcript).messages.flatMap((message) => {
+const toolParts = (transcript: unknown): ReadonlyArray<ToolPart> =>
+  decodeTranscript(transcript).messages.flatMap((message) => {
     const assistant = decodeAssistantMessage(message);
     if (Option.isNone(assistant)) return [];
     return assistant.value.content.flatMap((part) => {
@@ -86,7 +99,6 @@ const toolParts = (transcript: unknown): ReadonlyArray<ToolPart> => {
       return Option.isSome(decoded) ? [decoded.value] : [];
     });
   });
-};
 
 const toolText = (value: unknown): string => {
   if (typeof value === "string") return value;
@@ -98,7 +110,9 @@ const toolText = (value: unknown): string => {
 };
 
 const pathsIn = (value: unknown): ReadonlyArray<string> =>
-  [...toolText(value).matchAll(/tools\.([A-Za-z0-9_.-]+)/g)].map((match) => match[1] ?? "").filter(Boolean);
+  [...toolText(value).matchAll(/tools\.([A-Za-z0-9_.-]+)/g)]
+    .map((match) => match[1] ?? "")
+    .filter(Boolean);
 
 const evidenceRecord = (part: ToolPart): ExecutorEvidenceRecord => ({
   tool: part.name,
@@ -107,23 +121,29 @@ const evidenceRecord = (part: ToolPart): ExecutorEvidenceRecord => ({
 });
 
 export const collectExecutorEvidence = (transcript: unknown): ExecutorEvidence => {
-  const parts = toolParts(transcript);
   const discovered = new Set<string>();
   const searches: Array<ExecutorEvidenceRecord> = [];
   const calls: Array<ExecutorEvidenceRecord> = [];
-  for (const part of parts) {
+  for (const part of toolParts(transcript)) {
     const inputPaths = pathsIn(part.state.input);
+    const inputText = toolText(part.state.input);
     const isSearch =
       part.name === "executor_search" ||
       part.name === "executor.search" ||
       inputPaths.some((path) => path === "executor.search");
     if (isSearch) {
-      for (const path of pathsIn(part.state.content)) if (path !== "executor.search") discovered.add(path);
+      for (const path of pathsIn(part.state.content)) {
+        if (path !== "executor.search") discovered.add(path);
+      }
       searches.push(evidenceRecord(part));
       continue;
     }
     const directlyDiscovered = [...discovered].some(
-      (path) => part.name === path || part.name === path.replaceAll(".", "_") || inputPaths.includes(path),
+      (path) =>
+        part.name === path ||
+        part.name === path.replaceAll(".", "_") ||
+        inputPaths.includes(path) ||
+        inputText.includes(path),
     );
     if (directlyDiscovered) calls.push(evidenceRecord(part));
   }
@@ -141,7 +161,11 @@ export const interactionEventError = (event: unknown, sessionId: string): Error 
   }
   if (record["type"] === "form.created") {
     const form = eventData["form"];
-    if (form !== null && typeof form === "object" && (form as Record<string, unknown>)["sessionID"] === sessionId) {
+    if (
+      form !== null &&
+      typeof form === "object" &&
+      (form as Record<string, unknown>)["sessionID"] === sessionId
+    ) {
       return new Error("OpenCode requested a form; embedded PageGraph workflows are noninteractive.");
     }
   }
@@ -152,17 +176,20 @@ const waitForIdle = async (
   host: EmbeddedHost,
   sessionId: string,
   timeoutMs: number,
-): Promise<void> => {
+  after?: number,
+): Promise<number> => {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     for await (const event of host.sessions.log(
-      { sessionID: sessionId, follow: true },
+      { sessionID: sessionId, follow: true, after },
       { signal: controller.signal },
     )) {
       const interactionError = interactionEventError(event, sessionId);
       if (interactionError !== undefined) throw interactionError;
-      if (event.type === "session.execution.succeeded" && event.data.sessionID === sessionId) return;
+      if (event.type === "session.execution.succeeded" && event.data.sessionID === sessionId) {
+        return event.durable.seq;
+      }
       if (event.type === "session.execution.failed" && event.data.sessionID === sessionId) {
         throw new Error(`OpenCode session failed: ${JSON.stringify(event.data.error)}`);
       }
@@ -203,35 +230,54 @@ export const acquireWorkflowHost = async (options: {
       );
     }
 
+    const cursors = new Map<string, number>();
+    const complete = async (
+      sessionId: string,
+      prompt: string,
+      workflowOptions: WorkflowPromptOptions,
+    ): Promise<WorkflowHostResult> => {
+      await host.sessions.prompt({
+        sessionID: sessionId,
+        text: prompt,
+        skills: workflowOptions.skills.map((id) => ({ id })),
+      });
+      const cursor = await waitForIdle(
+        host,
+        sessionId,
+        options.timeoutMs ?? 180_000,
+        cursors.get(sessionId),
+      );
+      cursors.set(sessionId, cursor);
+      const transcript = await host.sessions.export({ sessionID: sessionId, sanitize: false });
+      return {
+        state: parseState(transcript),
+        sessionId,
+        transcript,
+        executor: collectExecutorEvidence(transcript),
+      };
+    };
+
     return {
       model,
-      researchKeywords: async (prompt) => {
+      research: async (prompt, workflowOptions) => {
         const session = await host.sessions.create({
-          title: "PageGraph keyword research",
+          title: "PageGraph SEO workflow",
           agent: "seo",
           model: { providerID: model.provider, id: model.id },
           location,
+          permissions:
+            workflowOptions.permissions === undefined ? undefined : [...workflowOptions.permissions],
         });
-        await host.sessions.prompt({
-          sessionID: session.id,
-          text: prompt,
-          skills: [{ id: "keyword-research" }],
-        });
-        await waitForIdle(host, session.id, options.timeoutMs ?? 180_000);
-        const transcript = await host.sessions.export({ sessionID: session.id, sanitize: false });
-        const executorEvidence = collectExecutorEvidence(transcript);
-        if (executorEvidence.searches.length === 0 || executorEvidence.calls.length === 0) {
+        const result = await complete(session.id, prompt, workflowOptions);
+        if (result.executor.searches.length === 0 || result.executor.calls.length === 0) {
           throw new Error(
             "The SEO agent returned without searching Executor and calling a discovered tool.",
           );
         }
-        return {
-          state: parseState(transcript),
-          sessionId: session.id,
-          transcript,
-          executor: executorEvidence,
-        };
+        return result;
       },
+      continue: (sessionId, prompt, workflowOptions) =>
+        complete(sessionId, prompt, workflowOptions),
       close: () => host.close(),
     };
   } catch (cause) {

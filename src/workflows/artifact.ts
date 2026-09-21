@@ -2,26 +2,39 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-import summaryTemplate from "./prompts/summary.md" with { type: "text" };
 import type { WorkflowRunV1 } from "./model";
+import summaryTemplate from "./prompts/summary.md" with { type: "text" };
 import { TextTemplate } from "./template";
 
-export const createRunId = (date = new Date(), nonce = randomUUID()): string =>
-  `${date.toISOString().replaceAll(":", "-").replace(".", "-")}-${nonce.slice(0, 8)}-keywords`;
+export const createRunId = (
+  date = new Date(),
+  workflow = "workflow",
+  nonce = randomUUID(),
+): string =>
+  `${date.toISOString().replaceAll(":", "-").replace(".", "-")}-${nonce.slice(0, 8)}-${workflow.replaceAll(".", "-")}`;
+
+const resultSummary = (result: unknown): string => {
+  if (result !== null && typeof result === "object") {
+    const summary = (result as Record<string, unknown>)["summary"];
+    if (typeof summary === "string") return summary;
+  }
+  return "Workflow completed; inspect run.json for the structured result.";
+};
 
 const summary = (run: WorkflowRunV1): string => {
-  const counts = run.decisions[0]?.counts;
+  const counts = run.decisions[0]?.report.counts;
   return TextTemplate.from(summaryTemplate)
     .values({
+      workflow: run.workflow,
       runId: run.id,
       model: `${run.model.provider}/${run.model.id}`,
       pages: run.targets.pages.length,
-      queries: run.result.opportunities.length,
       decisions: counts?.inputs ?? 0,
       review: counts?.review ?? 0,
       executorSearches: run.evidence.executor.searches.length,
       executorCalls: run.evidence.executor.calls.length,
-      summary: run.result.summary,
+      changedFiles: run.changes.files.length,
+      summary: resultSummary(run.result),
     })
     .render();
 };

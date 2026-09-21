@@ -2,12 +2,14 @@ import * as Command from "effect/unstable/cli/Command";
 
 import { checkCommand } from "./commands/check";
 import { auditCommand } from "./commands/audit";
-import { decideCommandGroup } from "./commands/decide";
+import { analyzeCommandGroup } from "./commands/analyze";
 import { diffCommand } from "./commands/diff";
 import { graphCommand } from "./commands/graph";
 import { inspectCommand } from "./commands/inspect";
 import { initCommand } from "./commands/init";
 import { linksCommand } from "./commands/links";
+import { improveCommandGroup } from "./commands/improve";
+import { planCommandGroup } from "./commands/plan";
 import { researchCommandGroup } from "./commands/research";
 import { robotsCommand } from "./commands/robots";
 import { sitemapCommand } from "./commands/sitemap";
@@ -20,7 +22,7 @@ import { sitemapCommand } from "./commands/sitemap";
  */
 export const cli = Command.make("pagegraph").pipe(
   Command.withDescription(
-    "Inspect and audit a TanStack Start SEO graph: sitemap, robots, cross-links, structured data, and link decisions.",
+    "Inspect, audit, research, and improve a TanStack Start site's page-backed SEO graph.",
   ),
   Command.withExamples([
     {
@@ -33,15 +35,21 @@ export const cli = Command.make("pagegraph").pipe(
     },
     { command: "pagegraph graph", description: "Print the SEO graph as a tree" },
     { command: "pagegraph sitemap", description: "Render sitemap.xml" },
+    {
+      command: "pagegraph research keywords --query \"transactional email api\" --market us",
+      description: "Run bounded page-backed keyword research",
+    },
   ]),
   Command.withSubcommands([
     auditCommand,
+    analyzeCommandGroup,
     initCommand,
-    decideCommandGroup,
     diffCommand,
     graphCommand,
+    improveCommandGroup,
     inspectCommand,
     linksCommand,
+    planCommandGroup,
     researchCommandGroup,
     checkCommand,
     sitemapCommand,
