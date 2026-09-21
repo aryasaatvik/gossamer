@@ -267,7 +267,7 @@ describe("workflow runner", () => {
           model: { provider: "test", id: "model" },
           research: async (_prompt, workflowOptions) => {
             expect(workflowOptions.permissions).toEqual([
-              { action: "edit", resource: `${root}/**`, effect: "allow" },
+              { action: "edit", resource: `${root}/**`, effect: "deny" },
               { action: "shell", resource: "*", effect: "deny" },
             ]);
             return {

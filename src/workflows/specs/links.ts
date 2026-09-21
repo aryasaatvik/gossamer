@@ -42,7 +42,7 @@ const LinksDecision = Decision.make({
   },
 });
 
-const classify = (
+export const classify = (
   answers: {
     readonly useful: { readonly probability: number };
     readonly supported: { readonly probability: number };
@@ -55,6 +55,8 @@ const classify = (
 ): string => {
   if (anyInReviewBand([answers.useful.probability, answers.supported.probability], threshold))
     return "review";
+  if (answers.useful.probability < threshold || answers.supported.probability < threshold)
+    return "skip";
   return (answers.action.probabilities[answers.action.label] ?? 0) >= threshold
     ? answers.action.label
     : "review";

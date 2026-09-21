@@ -236,6 +236,12 @@ export const acquireWorkflowHost = async (options: {
       prompt: string,
       workflowOptions: WorkflowPromptOptions,
     ): Promise<WorkflowHostResult> => {
+      if (workflowOptions.permissions !== undefined) {
+        await host.sessions.update({
+          sessionID: sessionId,
+          permissions: [...workflowOptions.permissions],
+        });
+      }
       await host.sessions.prompt({
         sessionID: sessionId,
         text: prompt,

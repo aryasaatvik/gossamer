@@ -44,7 +44,7 @@ const ArchitectureDecision = Decision.make({
   },
 });
 
-const classify = (
+export const classify = (
   answers: {
     readonly ownership: { readonly probability: number };
     readonly hierarchy: { readonly probability: number };
@@ -57,6 +57,8 @@ const classify = (
 ): string => {
   if (anyInReviewBand([answers.ownership.probability, answers.hierarchy.probability], threshold))
     return "review";
+  if (answers.ownership.probability < threshold || answers.hierarchy.probability < threshold)
+    return "keep";
   const actionProbability = answers.action.probabilities[answers.action.label] ?? 0;
   return actionProbability >= threshold ? answers.action.label : "review";
 };

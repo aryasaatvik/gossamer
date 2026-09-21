@@ -40,7 +40,7 @@ const SchemaDecision = Decision.make({
   },
 });
 
-const classify = (
+export const classify = (
   answers: {
     readonly pageTypeSupported: { readonly probability: number };
     readonly evidenceComplete: { readonly probability: number };
@@ -58,6 +58,11 @@ const classify = (
     )
   )
     return "review";
+  if (
+    answers.pageTypeSupported.probability < threshold ||
+    answers.evidenceComplete.probability < threshold
+  )
+    return "keep";
   return (answers.action.probabilities[answers.action.label] ?? 0) >= threshold
     ? answers.action.label
     : "review";

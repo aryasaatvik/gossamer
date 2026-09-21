@@ -149,14 +149,22 @@ export const runWorkflow = async (
     model: input.model ?? workflows.opencode.models?.[spec.id],
   });
   try {
-    const permissions =
+    const researchPermissions = repositoryMutationPermissionRules(input.root);
+    const actionPermissions =
       spec.mutatesFiles && !input.options.dryRun
         ? mutation.sessionPermissions
-        : repositoryMutationPermissionRules(input.root);
+        : researchPermissions;
     const researched = await host.research(researchPrompt(spec, evidence, input.options), {
       skills: spec.skills,
-      permissions,
+      permissions: researchPermissions,
     });
+    const gitAfterResearch = inspectGit(input.root);
+    const researchFiles = changedFiles(gitAtStart, gitAfterResearch);
+    if (researchFiles.length > 0) {
+      throw new Error(
+        `${spec.id} changed repository files during its read-only research turn: ${researchFiles.join(", ")}`,
+      );
+    }
     const state = spec.decodeState(capState(researched.state, input.options.limit));
     const decisionInputs = spec.decisionInputs(state);
     for (const item of decisionInputs) {
@@ -167,7 +175,7 @@ export const runWorkflow = async (
     const acted = spec.mutatesFiles
       ? await host.continue(researched.sessionId, actionPrompt(spec, state, decisionReport, mutation), {
           skills: spec.skills,
-          permissions,
+          permissions: actionPermissions,
         })
       : researched;
     const gitAfter = inspectGit(input.root);
