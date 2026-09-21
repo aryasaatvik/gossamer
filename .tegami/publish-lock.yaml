@@ -1,10 +1,10 @@
 core:changelogs:
-  - content: "---\npackages:\n  pagegraph:\n    type: patch\n---\n\n### Wait for Executor activation\n\nWorkflow commands now wait for the configured Executor plugin to appear in OpenCode's plugin\nregistry before starting a run. Registry failures still propagate immediately, and a bounded timeout\nkeeps missing or misconfigured Executor installations fail-closed.\n"
-    filename: 2026-09-21-executor-activation.md
+  - content: "---\npackages:\n  pagegraph:\n    type: patch\n---\n\n### Recover incomplete workflow results\n\nWhen an OpenCode turn collects Executor evidence but omits its final workflow JSON, PageGraph now\nruns one tool-free repair turn within the original deadline. Repair restores the session's prior\npermissions, and deadline failures report the configured timeout instead of an opaque transport\nerror.\n"
+    filename: 2026-09-21-workflow-result-repair.md
     v: 0.0.0
 core:packages:
   - changelogIds:
-      - 2026-09-21-executor-activation.md
+      - 2026-09-21-workflow-result-repair.md
     id: npm:pagegraph
     updated: true
 npm:packages:
