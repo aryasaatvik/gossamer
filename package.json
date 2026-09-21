@@ -67,7 +67,7 @@
     "build": "bunx tsdown",
     "prepare": "bun run build",
     "prepack": "bun run build",
-    "test": "vitest run",
+    "test": "bun --bun vitest run",
     "typecheck": "tsc --noEmit",
     "tegami": "bun tegami.config.mts",
     "version:packages": "bun run tegami version",

@@ -1,7 +1,5 @@
 import { defineConfig } from "tsdown";
 
-import { textImports } from "./scripts/text-imports.ts";
-
 // One entry per public `exports` subpath, plus `cli` for the `bin`. Two passes so
 // the CLI can bundle Effect while the library entries stay dependency-free.
 //
@@ -22,6 +20,11 @@ const base = {
   dts: true,
   sourcemap: true,
   platform: "neutral",
+  loader: {
+    ".jsonc": "text",
+    ".md": "text",
+    ".txt": "text",
+  },
   // Neutral resolves no Node builtins, so `node:*` imports are declared external
   // here rather than left to be inferred with a warning.
   deps: { neverBundle: [/^node:/] },
@@ -43,14 +46,12 @@ export default defineConfig([
     // `schema-dts` is types-only: it is bundled into the `.d.ts` and erases from
     // the JS, which is what keeps `.`/`./react` free of runtime dependencies.
     clean: true,
-    plugins: [textImports()],
   },
   {
     ...base,
     entry: { cli: "src/cli/bin.ts" },
     // The library pass owns the clean; this pass appends the CLI artifacts.
     clean: false,
-    plugins: [textImports()],
     deps: {
       neverBundle: [/^node:/],
       // Effect and every `@effect/*` package are bundled. `@effect/ai-typesafe`

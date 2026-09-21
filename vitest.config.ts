@@ -1,9 +1,7 @@
 import { defineConfig } from "vitest/config";
 
-import { textImports } from "./scripts/text-imports.js";
-
 export default defineConfig({
-  plugins: [textImports()],
+  assetsInclude: ["**/*.jsonc", "**/*.md", "**/*.txt"],
   test: {
     environment: "node",
     include: ["tests/**/*.{test,spec}.{ts,tsx}"],
