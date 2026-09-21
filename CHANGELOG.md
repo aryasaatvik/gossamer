@@ -1,3 +1,11 @@
+## pagegraph@0.8.1
+
+### Wait for Executor activation
+
+Workflow commands now wait for the configured Executor plugin to appear in OpenCode's plugin
+registry before starting a run. Registry failures still propagate immediately, and a bounded timeout
+keeps missing or misconfigured Executor installations fail-closed.
+
 ## pagegraph@0.8.0
 
 ### Run page-backed SEO workflows

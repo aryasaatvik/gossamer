@@ -1,10 +1,10 @@
 core:changelogs:
-  - content: "---\npackages:\n  pagegraph:\n    type: minor\n---\n\n### Run page-backed SEO workflows\n\nCombine PageGraph's deterministic route graph with an embedded OpenCode agent, project-owned\nconfiguration, live Executor tools, and Jev decisions. The new workflow-oriented CLI covers keyword,\ncompetitor, and authority research; SERP, content, and AI-search analysis; architecture planning; and\ncontent, metadata, schema, and internal-link improvements.\n\n- `pagegraph init` scaffolds a customizable `.pagegraph/opencode` preset with one SEO agent,\n  workflow-specific skills, and editable Executor starter recipes.\n- `research`, `analyze`, and `plan` workflows collect evidence without changing project files.\n- `improve` workflows require a clean Git tree, support `--dry-run`, leave edits uncommitted, and\n  record the resulting file changes.\n- Every run persists its graph, project context, OpenCode session, live-tool evidence, Jev answers,\n  Git provenance, and model provenance under `.pagegraph/runs`.\n\nThis release replaces the low-level public decision commands and input-oriented exports with the\nsmaller workflow surface. OpenCode owns model authentication and configuration; an Executor plugin\nprovides live SEO integrations discovered at runtime.\n"
-    filename: 2026-09-21-page-backed-seo-workflows.md
+  - content: "---\npackages:\n  pagegraph:\n    type: patch\n---\n\n### Wait for Executor activation\n\nWorkflow commands now wait for the configured Executor plugin to appear in OpenCode's plugin\nregistry before starting a run. Registry failures still propagate immediately, and a bounded timeout\nkeeps missing or misconfigured Executor installations fail-closed.\n"
+    filename: 2026-09-21-executor-activation.md
     v: 0.0.0
 core:packages:
   - changelogIds:
-      - 2026-09-21-page-backed-seo-workflows.md
+      - 2026-09-21-executor-activation.md
     id: npm:pagegraph
     updated: true
 npm:packages:
