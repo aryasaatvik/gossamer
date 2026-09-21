@@ -210,8 +210,15 @@ describe("OpenCode workflow evidence", () => {
       },
     };
 
-    await expect(waitForIdle(host as never, "session-1", 5)).rejects.toThrow(
+    await expect(waitForIdle(host as never, "session-1", { timeoutMs: 5 })).rejects.toThrow(
       "OpenCode session did not complete within 5ms.",
     );
+
+    await expect(
+      waitForIdle(host as never, "session-1", {
+        timeoutMs: 5,
+        configuredTimeoutMs: 180_000,
+      }),
+    ).rejects.toThrow("OpenCode session did not complete within 180000ms.");
   });
 });

@@ -253,14 +253,17 @@ export const interactionEventError = (event: unknown, sessionId: string): Error 
 export const waitForIdle = async (
   host: EmbeddedHost,
   sessionId: string,
-  timeoutMs: number,
-  after?: number,
+  options: {
+    readonly timeoutMs: number;
+    readonly configuredTimeoutMs?: number | undefined;
+    readonly after?: number | undefined;
+  },
 ): Promise<number> => {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const timer = setTimeout(() => controller.abort(), options.timeoutMs);
   try {
     for await (const event of host.sessions.log(
-      { sessionID: sessionId, follow: true, after },
+      { sessionID: sessionId, follow: true, after: options.after },
       { signal: controller.signal },
     )) {
       const interactionError = interactionEventError(event, sessionId);
@@ -277,7 +280,10 @@ export const waitForIdle = async (
     }
   } catch (cause) {
     if (controller.signal.aborted) {
-      throw new Error(`OpenCode session did not complete within ${timeoutMs}ms.`, { cause });
+      throw new Error(
+        `OpenCode session did not complete within ${options.configuredTimeoutMs ?? options.timeoutMs}ms.`,
+        { cause },
+      );
     }
     throw cause;
   } finally {
@@ -323,29 +329,40 @@ export const acquireWorkflowHost = async (options: {
           permissions: [...workflowOptions.permissions],
         });
       }
+      const configuredTimeoutMs = options.timeoutMs ?? 180_000;
+      const deadline = Date.now() + configuredTimeoutMs;
+      const remaining = (): number => Math.max(0, deadline - Date.now());
       await host.sessions.prompt({
         sessionID: sessionId,
         text: prompt,
         skills: workflowOptions.skills.map((id) => ({ id })),
       });
-      let cursor = await waitForIdle(
-        host,
-        sessionId,
-        options.timeoutMs ?? 180_000,
-        cursors.get(sessionId),
-      );
+      let cursor = await waitForIdle(host, sessionId, {
+        timeoutMs: remaining(),
+        configuredTimeoutMs,
+        after: cursors.get(sessionId),
+      });
       cursors.set(sessionId, cursor);
       let transcript = await host.sessions.export({ sessionID: sessionId, sanitize: false });
       const parsed = await parseWorkflowStateWithRepair(transcript, async () => {
+        const priorPermissions = [...(workflowOptions.permissions ?? [])];
         await host.sessions.update({
           sessionID: sessionId,
           permissions: [{ action: "*", resource: "*", effect: "deny" }],
         });
-        await host.sessions.prompt({ sessionID: sessionId, text: STATE_REPAIR_PROMPT });
-        cursor = await waitForIdle(host, sessionId, options.timeoutMs ?? 180_000, cursor);
-        cursors.set(sessionId, cursor);
-        transcript = await host.sessions.export({ sessionID: sessionId, sanitize: false });
-        return transcript;
+        try {
+          await host.sessions.prompt({ sessionID: sessionId, text: STATE_REPAIR_PROMPT });
+          cursor = await waitForIdle(host, sessionId, {
+            timeoutMs: remaining(),
+            configuredTimeoutMs,
+            after: cursor,
+          });
+          cursors.set(sessionId, cursor);
+          transcript = await host.sessions.export({ sessionID: sessionId, sanitize: false });
+          return transcript;
+        } finally {
+          await host.sessions.update({ sessionID: sessionId, permissions: priorPermissions });
+        }
       });
       return {
         state: parsed.state,
