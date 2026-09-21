@@ -191,11 +191,13 @@ const pathsIn = (value: unknown): ReadonlyArray<string> =>
 const toolPathPattern = /^[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)+$/;
 
 const pathsInSearchOutput = (value: unknown): ReadonlyArray<string> => {
-  const found = new Set(pathsIn(value));
-  const visit = (current: unknown): void => {
+  const found = new Set<string>();
+  const visit = (current: unknown, pathField = false): void => {
     if (typeof current === "string") {
-      const candidate = current.startsWith("tools.") ? current.slice("tools.".length) : current;
-      if (toolPathPattern.test(candidate)) found.add(candidate);
+      if (pathField) {
+        const candidate = current.startsWith("tools.") ? current.slice("tools.".length) : current;
+        if (toolPathPattern.test(candidate)) found.add(candidate);
+      }
       try {
         visit(JSON.parse(current));
       } catch {
@@ -209,8 +211,7 @@ const pathsInSearchOutput = (value: unknown): ReadonlyArray<string> => {
     }
     if (current === null || typeof current !== "object") return;
     const record = current as Record<string, unknown>;
-    if (typeof record["path"] === "string") visit(record["path"]);
-    for (const nested of Object.values(record)) visit(nested);
+    for (const [key, nested] of Object.entries(record)) visit(nested, key === "path");
   };
   visit(value);
   return [...found];
