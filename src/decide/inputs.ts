@@ -1,5 +1,5 @@
 /**
- * Batch input reading for `pagegraph decide <family>`. A batch is either a JSON
+ * Batch input reading for internal decision tooling. A batch is either a JSON
  * array, a `{ "inputs": [...] }` envelope, or newline-delimited JSON (one input
  * per non-empty line) — from a file argument or stdin. A TTY with no file is an
  * error: the command must never appear to hang waiting for input that will not

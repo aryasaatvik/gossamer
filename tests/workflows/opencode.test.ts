@@ -1,6 +1,14 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { describe, expect, it } from "vitest";
 
-import { collectExecutorEvidence, interactionEventError } from "../../src/workflows/opencode";
+import {
+  assertWorkflowSkillsAvailable,
+  collectExecutorEvidence,
+  interactionEventError,
+} from "../../src/workflows/opencode";
 
 const tool = (id: string, name: string, input: unknown, content: unknown) => ({
   type: "tool",
@@ -11,6 +19,27 @@ const tool = (id: string, name: string, input: unknown, content: unknown) => ({
 });
 
 describe("OpenCode workflow evidence", () => {
+  it("requires the attached workflow skill and its Executor reference", () => {
+    const root = mkdtempSync(join(tmpdir(), "pagegraph-opencode-preset-"));
+    try {
+      expect(() => assertWorkflowSkillsAvailable(root, ["content-analysis"])).toThrow(
+        "Run `pagegraph init`",
+      );
+
+      const skill = join(root, "skills", "content-analysis");
+      mkdirSync(join(skill, "references"), { recursive: true });
+      writeFileSync(join(skill, "SKILL.md"), "# Content Analysis\n");
+      expect(() => assertWorkflowSkillsAvailable(root, ["content-analysis"])).toThrow(
+        "references/executor.md",
+      );
+
+      writeFileSync(join(skill, "references", "executor.md"), "# Executor Starters\n");
+      expect(() => assertWorkflowSkillsAvailable(root, ["content-analysis"])).not.toThrow();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("attributes only structured calls to tools returned by Executor discovery", () => {
     const search = tool(
       "search",
@@ -21,7 +50,9 @@ describe("OpenCode workflow evidence", () => {
     const discovered = tool(
       "provider",
       "codemode",
-      { code: 'return tools.open_seo.cached.keywordIdeas({ query: "email api" })' },
+      {
+        code: 'const path = "open_seo.cached.keywordIdeas"; return call(path, { query: "email api" })',
+      },
       [{ type: "text", text: "result" }],
     );
     const unrelated = tool(
@@ -39,7 +70,9 @@ describe("OpenCode workflow evidence", () => {
 
     expect(collectExecutorEvidence(transcript)).toEqual({
       searches: [{ tool: "codemode", input: search.state.input, output: search.state.content }],
-      calls: [{ tool: "codemode", input: discovered.state.input, output: discovered.state.content }],
+      calls: [
+        { tool: "codemode", input: discovered.state.input, output: discovered.state.content },
+      ],
     });
   });
 

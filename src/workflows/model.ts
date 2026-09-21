@@ -12,16 +12,34 @@ export interface ExecutorEvidence {
   readonly calls: ReadonlyArray<ExecutorEvidenceRecord>;
 }
 
-export type WorkflowId = "research.keywords";
+export const workflowIds = [
+  "research.keywords",
+  "research.competitors",
+  "research.authority",
+  "analyze.serp",
+  "analyze.content",
+  "analyze.ai-search",
+  "plan.architecture",
+  "improve.content",
+  "improve.metadata",
+  "improve.schema",
+  "improve.links",
+] as const;
+export type WorkflowId = (typeof workflowIds)[number];
 
 export interface WorkflowTargetOptions {
   readonly pages: ReadonlyArray<string>;
   readonly queries: ReadonlyArray<string>;
   readonly kinds: ReadonlyArray<string>;
+  readonly competitors: ReadonlyArray<string>;
+  readonly domains: ReadonlyArray<string>;
   readonly limit: number;
   readonly market?: string | undefined;
   readonly language?: string | undefined;
+  readonly device?: "desktop" | "mobile" | undefined;
   readonly refresh: boolean;
+  readonly dryRun: boolean;
+  readonly allowDirty: boolean;
 }
 
 export interface KeywordCandidate {
@@ -64,11 +82,18 @@ export interface WorkflowRunV1 {
     readonly sources: ReadonlyArray<{ readonly path: string; readonly content: string }>;
     readonly executor: ExecutorEvidence;
   };
-  readonly decisions: ReadonlyArray<DecisionBatchReport>;
+  readonly decisions: ReadonlyArray<{
+    readonly family: string;
+    readonly questions: ReadonlyArray<{
+      readonly inputRef: string;
+      readonly decisions: Readonly<Record<string, unknown>>;
+    }>;
+    readonly report: DecisionBatchReport;
+  }>;
   readonly changes: {
     readonly files: ReadonlyArray<string>;
     readonly providerCalls: ReadonlyArray<string>;
   };
-  readonly result: KeywordResearchState;
+  readonly result: unknown;
   readonly opencode: { readonly agent: "seo"; readonly sessionId: string; readonly transcript: unknown };
 }

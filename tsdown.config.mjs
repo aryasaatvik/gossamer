@@ -54,11 +54,9 @@ export default defineConfig([
     clean: false,
     deps: {
       neverBundle: [/^node:/],
-      // Effect and every `@effect/*` package are bundled. `@effect/ai-typesafe`
-      // (the TypeSafe System One `DecisionModel` provider behind
-      // `pagegraph links decide`) is listed explicitly so it stays bundled even
-      // if the broader `@effect/*` pattern is ever narrowed.
-      alwaysBundle: [/^effect(\/|$)/, /^@effect\/ai-typesafe$/, /^@effect\//],
+      // Effect and every `@effect/*` package are bundled for the built CLI and
+      // workflow runtime, so consumers do not resolve a different Effect RC.
+      alwaysBundle: [/^effect(\/|$)/, /^@effect\//],
     },
   },
 ]);

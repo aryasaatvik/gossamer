@@ -244,7 +244,7 @@ export default defineSeoConfig({
 });
 ```
 
-Run the first page-backed workflow:
+Run a page-backed workflow:
 
 ```bash
 pagegraph research keywords \
@@ -253,16 +253,41 @@ pagegraph research keywords \
   --language en
 ```
 
-It starts from the selected graph and context files, asks the SEO agent to search Executor's live
-catalog and compose suitable tools, then evaluates the structured opportunities with Jev. Each run
-writes `.pagegraph/runs/<run-id>/run.json` and `summary.md`. The JSON retains the deterministic
-graph, context, complete OpenCode session export, Executor tool evidence, Jev answers, Git state,
-and model provenance. Keep this directory ignored: provider output can be large or account-specific.
+Every workflow starts from the selected graph and context files, asks the SEO agent to search
+Executor's live catalog and compose suitable tools, then evaluates its structured observations with
+Jev. Tool paths are discovered at runtime; the generated skills contain editable starter recipes,
+not a fixed integration list.
 
-`research keywords` targets the whole public corpus by default. Narrow it with repeatable `--page`,
-`--query`, and `--kind` flags or `--limit`; use `--model` and `--opencode-config` for one-run host
-overrides. Agentic workflows fail when the configured model, active Executor plugin, live tool use,
-or `TYPESAFE_API_KEY` for Jev is unavailable.
+| Command | Result |
+| --- | --- |
+| `research keywords` | Query demand, intent, and page ownership opportunities |
+| `research competitors` | Competitor topics, pages, and positioning evidence |
+| `research authority` | Qualified editorial, directory, partner, and community opportunities |
+| `analyze serp` | Search-result intent and page-shape fit |
+| `analyze content` | Substance, answer quality, and intent overlap |
+| `analyze ai-search` | Citation readiness and answer-engine coverage |
+| `plan architecture` | A page-backed information-architecture plan |
+| `improve content` | Evidence-backed source copy edits |
+| `improve metadata` | Title and description edits at the owning source |
+| `improve schema` | Structured-data edits justified by visible content |
+| `improve links` | Contextual internal-link edits from graph and page evidence |
+
+The common selectors are repeatable `--page`, `--query`, and `--kind`, plus `--limit`, `--market`,
+`--language`, `--refresh`, `--model`, `--opencode-config`, and `--out`. Relevant workflows also
+accept `--competitor`, `--domain`, or `--device desktop|mobile`. Workflows are noninteractive and
+fail immediately if the agent asks a question or requests permission.
+
+The four `improve` workflows write source files by default and require a clean Git tree. Use
+`--dry-run` to keep repository edit and shell tools disabled, or `--allow-dirty` when you explicitly
+want the agent to edit alongside existing changes. PageGraph leaves every diff uncommitted and
+records modified, added, and deleted files after the workflow finishes.
+
+Each run writes `.pagegraph/runs/<run-id>/run.json` and `summary.md`. The JSON retains the
+deterministic graph, context, complete OpenCode session export, Executor tool evidence, Jev question
+definitions and answers, Git provenance, changed files, and model provenance. Keep this directory
+ignored: provider output can be large or account-specific. Workflows fail when the configured model,
+active Executor plugin, catalog search plus discovered tool call, or `TYPESAFE_API_KEY` for Jev is
+unavailable.
 
 ## Typed paths
 
@@ -367,8 +392,8 @@ pagegraph links verify <url>    # crawl served HTML: depth, orphans, declared-vs
 pagegraph links verify <url> --assert-coverage  # also assert seo.config.ts coverage on served anchors
 pagegraph links verify <url> --emit-rendered <file>  # save the rendered edge set
 pagegraph links candidates      # propose contextual links from the declared graph
-pagegraph links decide <file>   # answer typed link questions with Jev (TYPESAFE_API_KEY)
-pagegraph decide <family> [<file>]  # answer a decision batch with Jev (TYPESAFE_API_KEY)
+pagegraph research keywords --query "email api"  # combine graph, Executor, and Jev evidence
+pagegraph improve metadata --page /pricing       # apply a clean-tree source improvement
 pagegraph sitemap               # print sitemap.xml
 pagegraph robots                # print robots.txt
 ```
@@ -454,194 +479,17 @@ Pairs already declared as a `related` edge are excluded, and `--rendered` accept
 a JSON dump of already-served anchors (`[{ from, to }]` or `{ edges: [...] }`) to
 exclude those too.
 
-The output is a reviewable plan: human text by default, versioned JSON with
-`--json`. Nothing is applied. `--limit` and `--cluster` bound the plan, and
-`--decide` optionally hands the candidates to Jev for a recommendation and
-confidence per pair (requires `TYPESAFE_API_KEY`):
+The output is a deterministic, reviewable plan: human text by default and
+versioned JSON with `--json`. Nothing is applied; `--limit` and `--cluster`
+bound the plan. Use `pagegraph improve links` when you want Executor evidence,
+Jev evaluation, and source edits:
 
 ```bash
 pagegraph links candidates
 pagegraph links candidates --cluster blog --limit 20
 pagegraph links candidates --rendered rendered.json --json | jq
-pagegraph links candidates --decide
+pagegraph improve links --page "/docs/**"
 ```
-
-### Decide with Jev
-
-`pagegraph links decide` answers four decisions per candidate — *does the source have a genuine
-reason to link to the destination?*, *is descriptive anchor text already in the copy?*, *which
-direction deserves the link?*, and *how relevant is it?* — and routes anything inside the confidence
-band `(1−t, t)` to a `review` bucket instead of auto-applying. `--budget` (default 4) keeps only the
-top-K candidates per source by relevance.
-
-```bash
-pagegraph links decide candidates.json --threshold 0.9
-pagegraph links decide candidates.json --budget 2 --json | jq
-cat candidates.json | pagegraph links decide
-```
-
-Decisions run through [Jev](https://typesafe.ai) via `@effect/ai-typesafe` (model `jev-latest`),
-bundled into the CLI. The API key is read from the **`TYPESAFE_API_KEY` environment variable** — it
-is deliberately not a `seo.config.ts` field, so keys never live in the repo; `seo.config.ts` carries
-non-secret decision settings only. Without a key the command exits 1 with a clear message and an
-empty stdout.
-
-### The decision runner
-
-`pagegraph decide <family>` generalizes Jev decisions over a batch. Each input answers every decision
-for that input in one provider call; confident answers resolve and anything inside the confidence
-band goes to a `review` bucket. Nothing is applied automatically — the report is the end product.
-
-```bash
-pagegraph decide <family> inputs.json --json | jq
-cat inputs.json | pagegraph decide <family> --threshold 0.9
-```
-
-A batch is a JSON array, a `{ "inputs": [...] }` envelope, or JSONL (one input per line), from a file
-argument or stdin. Flags are shared across families:
-
-| Flag              | Default     | Meaning                                                       |
-| ----------------- | ----------- | ------------------------------------------------------------- |
-| `--json`          | false       | Emit the versioned report as JSON on stdout                    |
-| `--model <id>`    | `jev-latest` | TypeSafe System One model (`jev-latest`, `jev-preview`, …)     |
-| `--threshold <t>` | `0.7`       | Confidence boundary; `(1−t, t)` is the review band             |
-| `--concurrency <n>` | `4`       | In-flight decision calls                                       |
-| `--cache <dir>`   | —           | Reuse model answers by family + model + input hash             |
-| `--review-out <file>` | —       | Write only the below-threshold records to JSON                 |
-
-`pagegraph decide links` is the links family alias of `pagegraph links decide` (see
-[Decide with Jev](#decide-with-jev)); it accepts the same candidate array.
-
-#### `decide serp` — is our page the shape this SERP rewards?
-
-Input: one saved results-page snapshot per input.
-
-```json
-{
-  "query": "best email api",
-  "ourPage": {
-    "url": "https://example.com/email-api",
-    "title": "Email API for developers",
-    "kind": "page",
-    "firstWords": "Send transactional email from your product."
-  },
-  "serpItems": [
-    { "type": "organic", "rank": 1, "domain": "a.example", "title": "Best email APIs", "snippet": "Compare" }
-  ]
-}
-```
-
-| Verdict    | Meaning                                                            |
-| ---------- | ------------------------------------------------------------------ |
-| `aligned`  | Intent and format are both confidently positive.                   |
-| `mismatch` | At least one of intent/format is confidently wrong.                |
-| `review`   | Any answer (`ourFormatFit`, `intentMatch`, `titlePatternMatch`) is inside the band. |
-
-#### `decide content` — does this page carry enough substance?
-
-Input: one page per input, with the evidence the rubric reads.
-
-```json
-{
-  "url": "https://example.com/email-api",
-  "query": "best email api",
-  "title": "Transactional email API for product teams",
-  "h1": "Send transactional email",
-  "first150Words": "The API sends one message per call and reports delivery events.",
-  "headings": ["Quickstart", "Events", "Pricing"],
-  "wordCount": 1200,
-  "structuredData": ["Article", "FAQPage"],
-  "categoryLock": "email api",
-  "siblingIntents": ["email deliverability", "sms api"],
-  "competitorExcerpts": ["A competitor's overview."]
-}
-```
-
-| Verdict  | Meaning                                                                     |
-| -------- | --------------------------------------------------------------------------- |
-| `pass`   | The value rating is not `thin` and no rubric probability is confidently false. |
-| `flag`   | Value is `thin`, or a rubric probability (`originalValue`, `answersFirst`, …) is confidently false. |
-| `review` | Any rubric or value probability is inside the band, or an evidence-dependent rubric (`distinctIntent`, `competitiveSubstance`) is confidently positive without `siblingIntents`/`competitorExcerpts`. |
-
-`wordCount` must be a non-negative integer.
-
-`value` rates `thin | adequate | strong`.
-
-#### `decide fit` — which existing page should target this query?
-
-Input: a query plus the site's candidate pages. Candidate ids become the provider labels, so the
-family needs at least two candidates with unique ids of at most 255 characters.
-
-```json
-{
-  "query": "best email api",
-  "candidates": [
-    { "id": "/email-api", "title": "Email API", "excerpt": "Send transactional email." },
-    { "id": "/pricing", "title": "Pricing", "excerpt": "Volume pricing." }
-  ]
-}
-```
-
-| Verdict        | Meaning                                                  |
-| -------------- | -------------------------------------------------------- |
-| `map`          | A page is confidently best; update it.                    |
-| `cannibalized` | Multiple pages already target the query.                  |
-| `gap`          | No page can serve the query; a new page is needed.        |
-| `review`       | The conflict or the best page is inside the confidence band. |
-
-#### `decide meta` — rank supplied title/description candidates
-
-Input: a page plus the candidates to rank. Drafting is out of scope — only the provided candidates
-are judged. Needs at least two candidates with unique ids of at most 255 characters.
-
-```json
-{
-  "url": "https://example.com/email-api",
-  "intent": "choose an email api",
-  "categoryLock": "email api",
-  "candidates": [
-    { "id": "a", "title": "Email API", "description": "Send transactional email." },
-    { "id": "b", "title": "Email pricing", "description": "Volume pricing." }
-  ]
-}
-```
-
-| Verdict       | Meaning                                                                   |
-| ------------- | ------------------------------------------------------------------------- |
-| `choose:<id>` | A candidate is confidently best with clear intent, length, category, and clickbait checks. |
-| `review`      | A concern or an uncertain pick; a human decides.                           |
-
-#### `decide authority` — is this a real link opportunity?
-
-Input: one link target per input.
-
-```json
-{
-  "domain": "blog.example",
-  "url": "https://blog.example/email-guide",
-  "anchor": "transactional email API",
-  "context": "We cover how a transactional email API works end to end.",
-  "targetPath": "/email-api",
-  "rd": 120,
-  "signals": ["editorial", "no-outbound-links"]
-}
-```
-
-| Verdict  | Meaning                                                                  |
-| -------- | ------------------------------------------------------------------------ |
-| `accept` | Legitimate, outreach-worthy, and a confident non-`none` fit.              |
-| `spam`   | Spam is confidently high.                                                |
-| `review` | Any probability is inside the band, or the fit is `none`/uncertain.       |
-
-`fit` classifies `directory | partner | editorial | community | none`.
-
-#### `decide links` — direction, relevance, and budget
-
-`pagegraph decide links` shares the links decisions (see [Decide with Jev](#decide-with-jev)) and
-adds `--budget <n>` (default 4): keep the top-K candidates per outbound page by `relevance`
-(`irrelevant | useful | essential`). `direction` classifies `a_to_b | b_to_a | both`; a record also
-carries the resulting `from`/`to` endpoints, so a `b_to_a` recommendation is reported — and
-budgeted — against the page the model actually chose to link *from*.
 
 ### Contextual-link coverage
 

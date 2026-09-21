@@ -27,7 +27,7 @@ import { DecisionRecord, type DecisionBatchReport } from "./record";
  */
 export interface DecisionFamily<Input> {
   readonly name: string;
-  readonly input: Schema.Schema<Input>;
+  readonly input: Schema.ConstraintDecoder<Input>;
   /** Build the definition for one input; dynamic-label families build per input. */
   readonly definitionFor: (input: Input) => Decision.Definition<any, any>;
   /** Stable human reference for the input in a report. */
@@ -246,13 +246,10 @@ export const runDecisions = <Input>(
     });
   });
 
-/** Decode raw batch inputs against a family's schema. Throws on the first invalid input. */
-/** `decodeUnknownSync` with an unconstrained schema type; the family types the result. */
-const decodeUnknown = Schema.decodeUnknownSync as unknown as (
-  schema: Schema.Constraint,
-) => (value: unknown) => unknown;
-
 export const decodeFamilyInputs = <Input>(
   family: DecisionFamily<Input>,
   raw: ReadonlyArray<unknown>,
-): ReadonlyArray<Input> => raw.map((value) => decodeUnknown(family.input)(value) as Input);
+): ReadonlyArray<Input> => {
+  const decode = Schema.decodeUnknownSync(family.input);
+  return raw.map((value) => decode(value));
+};

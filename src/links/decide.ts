@@ -151,9 +151,8 @@ export interface LinksDecideCounts {
 }
 
 /**
- * `pagegraph links decide` report. `resolved` holds the auto-classified records
- * and `review` the below-threshold ones — every candidate appears exactly once,
- * and only `review` needs a human.
+ * Internal link-decision report. `resolved` holds the auto-classified records
+ * and `review` the below-threshold ones; workflow artifacts preserve the report.
  */
 export interface LinksDecideReport {
   readonly kind: "links-decide";

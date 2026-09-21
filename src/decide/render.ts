@@ -1,5 +1,5 @@
 /**
- * Human-plane formatter for `pagegraph decide <family>`. Pure string-in/string-
+ * Human-plane formatter for internal decision tooling. Pure string-in/string-
  * out so it is unit-testable; the machine plane (`--json`) bypasses it.
  */
 
@@ -10,7 +10,7 @@ const reviewLine = (record: DecisionRecord): string =>
   [`  ${record.inputRef}  ·  ${record.verdict}`, `      ${JSON.stringify(record.answers)}`].join("\n");
 
 /**
- * Human `decide` report: the batch header, a verdict breakdown, and the review
+ * Human decision report: the batch header, a verdict breakdown, and the review
  * queue — the only part a human has to act on.
  */
 export const renderDecideReport = (report: DecisionBatchReport): string => {

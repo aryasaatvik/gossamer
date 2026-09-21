@@ -82,7 +82,6 @@ interface Report {
   readonly clusters: ReadonlyArray<{ key: string; candidates: number }>;
   readonly candidates: ReadonlyArray<Candidate>;
   readonly rendered: boolean;
-  readonly decisions: unknown;
 }
 
 describe("pagegraph links candidates", () => {
@@ -98,7 +97,6 @@ describe("pagegraph links candidates", () => {
     expect(report.total).toBe(6);
     expect(report.truncated).toBe(false);
     expect(report.rendered).toBe(false);
-    expect(report.decisions).toBeNull();
     expect(report.clusters).toEqual([
       { key: "blog", candidates: 4 },
       { key: "kind:page", candidates: 2 },
@@ -188,22 +186,6 @@ describe("pagegraph links candidates", () => {
     expect(result.stdout).toContain("blog");
     expect(result.stdout).toContain("/blog/a → /blog/c");
     expect(result.stdout).toContain('same top-level section "/blog"');
-  });
-
-  it("fails cleanly when --decide is used without TYPESAFE_API_KEY", () => {
-    const directory = configDirectory(CONFIG);
-    const env = { ...process.env };
-    delete env.TYPESAFE_API_KEY;
-    const result = spawnSync("bun", [cli, "links", "candidates", "--decide", "--json"], {
-      cwd: directory,
-      encoding: "utf8",
-      timeout: 20_000,
-      env,
-    });
-
-    expect(result.status).toBe(1);
-    expect(result.stdout).toBe("");
-    expect(result.stderr).toContain("TYPESAFE_API_KEY is not set");
   });
 
   it("rejects a non-positive --limit", () => {

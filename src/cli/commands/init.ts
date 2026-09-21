@@ -6,14 +6,8 @@ import * as Effect from "effect/Effect";
 import * as Command from "effect/unstable/cli/Command";
 import * as Flag from "effect/unstable/cli/Flag";
 
-import presetAgents from "../preset/opencode/AGENTS.md" with { type: "text" };
-import presetSeoAgent from "../preset/opencode/agents/seo.md" with { type: "text" };
-import presetOpenCode from "../preset/opencode/opencode.jsonc" with { type: "text" };
-import presetKeywordResearchExecutor from "../preset/opencode/skills/keyword-research/references/executor.md" with {
-  type: "text",
-};
-import presetKeywordResearchSkill from "../preset/opencode/skills/keyword-research/SKILL.md" with { type: "text" };
 import presetGitignore from "../preset/gitignore.txt" with { type: "text" };
+import { opencodePreset } from "../preset/opencode/preset";
 import { inspectGit } from "../../workflows/git";
 import { printJson, printText, SeoCliError } from "../output";
 import { jsonFlag } from "../output";
@@ -29,12 +23,7 @@ const allowDirtyFlag = Flag.Boolean("allow-dirty").pipe(
 
 const PRESET: Readonly<Record<string, string>> = {
   ".pagegraph/.gitignore": presetGitignore,
-  ".pagegraph/opencode/opencode.jsonc": presetOpenCode,
-  ".pagegraph/opencode/AGENTS.md": presetAgents,
-  ".pagegraph/opencode/agents/seo.md": presetSeoAgent,
-  ".pagegraph/opencode/skills/keyword-research/SKILL.md": presetKeywordResearchSkill,
-  ".pagegraph/opencode/skills/keyword-research/references/executor.md":
-    presetKeywordResearchExecutor,
+  ...opencodePreset,
 };
 
 const repositoryRoot = (): string => {
