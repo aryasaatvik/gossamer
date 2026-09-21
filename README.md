@@ -34,13 +34,14 @@ bun add -D lighthouse   # only for `pagegraph audit` performance evidence
 | `pagegraph/audit`  | Audit services, scanner protocol, rules, and report schemas                                    | `effect`                                    |
 | `pagegraph` bin                   | CLI over the same graph                                                                        | bundled — runs on Bun                        |
 
-The core and React entries have **zero runtime dependencies** — everything above is a
-peer, and only the entries you import need theirs installed.
+The core and React import graphs have **zero runtime dependencies** — everything they use is a
+peer, and only the entries you import need those peers loaded.
 
-The CLI **bundles Effect and the TypeSafe provider**, so it needs no Effect peers and does not
-depend on the app's Effect RC; it runs on [Bun](https://bun.sh) (`bunx pagegraph`). `vite` stays a
-peer — the graph commands load your app through Vite at runtime — and `lighthouse` is only needed by
-`pagegraph audit`. Importing `pagegraph/audit` programmatically still needs `effect`.
+The CLI **bundles PageGraph's Effect and TypeSafe provider runtime**, so it does not depend on the
+app's Effect RC; it runs on [Bun](https://bun.sh) (`bunx pagegraph`). Agentic workflows load the
+OpenCode SDK and its private Effect runtime only when invoked. `vite` stays a peer — graph commands
+load your app through Vite at runtime — and `lighthouse` is only needed by `pagegraph audit`.
+Importing `pagegraph/audit` programmatically still needs `effect`.
 
 ## Quick start
 
@@ -204,6 +205,65 @@ Preview hosts (`indexable: false`) drop `contentSignal` and `directives`;
 ```bash
 pagegraph check
 ```
+
+## Agentic workflows
+
+PageGraph can combine the deterministic route graph with a project-owned embedded OpenCode agent,
+live tools exposed by an Executor plugin, and Jev decisions. Scaffold the OpenCode preset once:
+
+```bash
+pagegraph init
+```
+
+The generated `.pagegraph/opencode` directory contains one `seo` agent and customizable `content`,
+`technical`, and `authority` skills. Add your Executor plugin to its `opencode.jsonc`; OpenCode and
+the plugin own model and Executor authentication. PageGraph does not copy credentials or assume
+fixed provider-tool addresses.
+
+Enable workflows in `seo.config.ts`:
+
+```ts
+export default defineSeoConfig({
+  // origin, disallow, and loadGraph as above
+  workflows: {
+    opencode: {
+      configDirectory: ".pagegraph/opencode",
+      defaultModel: "openrouter/example/model",
+      models: {
+        "research.keywords": "openrouter/example/research-model",
+      },
+    },
+    context: {
+      files: ["AGENTS.md"],
+      byWorkflow: {
+        "research.keywords": ["docs/seo/measurement.md"],
+      },
+    },
+    runsDirectory: ".pagegraph/runs",
+  },
+});
+```
+
+Run the first page-backed workflow:
+
+```bash
+pagegraph research keywords \
+  --query "transactional email api" \
+  --market us \
+  --language en \
+  --no-input
+```
+
+It starts from the selected graph and context files, asks the SEO agent to search Executor's live
+catalog and compose suitable tools, then evaluates the structured opportunities with Jev. Each run
+writes `.pagegraph/runs/<run-id>/run.json` and `summary.md`. The JSON retains the deterministic
+graph, context, complete OpenCode session export, Executor tool evidence, Jev answers, Git state,
+and model provenance. Keep this directory ignored: provider output can be large or account-specific.
+
+`research keywords` targets the whole public corpus by default. Narrow it with repeatable `--page`,
+`--query`, and `--kind` flags or `--limit`; use `--model` and `--opencode-config` for one-run host
+overrides. Agentic workflows fail when the configured model, active Executor plugin, live tool use,
+or `TYPESAFE_API_KEY` for Jev is unavailable.
 
 ## Typed paths
 

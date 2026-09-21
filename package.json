@@ -76,6 +76,7 @@
     "release": "bun run release:check && bun run tegami publish"
   },
   "dependencies": {
+    "@opencode/sdk": "^2.0.11",
     "@tanstack/router-generator": "^1.167.21"
   },
   "devDependencies": {
@@ -123,6 +124,12 @@
     },
     "vite": {
       "optional": true
+    }
+  },
+  "overrides": {
+    "@effect/platform-node": {
+      "@effect/platform-node-shared": "4.0.0-rc.112",
+      "effect": "4.0.0-rc.112"
     }
   }
 }

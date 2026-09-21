@@ -6,7 +6,9 @@ import { decideCommandGroup } from "./commands/decide";
 import { diffCommand } from "./commands/diff";
 import { graphCommand } from "./commands/graph";
 import { inspectCommand } from "./commands/inspect";
+import { initCommand } from "./commands/init";
 import { linksCommand } from "./commands/links";
+import { researchCommandGroup } from "./commands/research";
 import { robotsCommand } from "./commands/robots";
 import { sitemapCommand } from "./commands/sitemap";
 
@@ -34,11 +36,13 @@ export const cli = Command.make("pagegraph").pipe(
   ]),
   Command.withSubcommands([
     auditCommand,
+    initCommand,
     decideCommandGroup,
     diffCommand,
     graphCommand,
     inspectCommand,
     linksCommand,
+    researchCommandGroup,
     checkCommand,
     sitemapCommand,
     robotsCommand,
