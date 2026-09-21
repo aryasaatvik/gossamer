@@ -22,7 +22,6 @@ export interface WorkflowTargetOptions {
   readonly market?: string | undefined;
   readonly language?: string | undefined;
   readonly refresh: boolean;
-  readonly input: boolean;
 }
 
 export interface KeywordCandidate {

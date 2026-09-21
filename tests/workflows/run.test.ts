@@ -79,7 +79,6 @@ describe("keyword workflow", () => {
           kinds: [],
           limit: 1,
           refresh: false,
-          input: false,
         },
       },
       {
@@ -89,8 +88,7 @@ describe("keyword workflow", () => {
         })(),
         acquireHost: async () => ({
           model: { provider: "test", id: "model" },
-          researchKeywords: async (_prompt, workflowOptions) => {
-            expect(workflowOptions).toEqual({ input: false });
+          researchKeywords: async (_prompt) => {
             writeFileSync(join(root, "AGENTS.md"), "Changed again during workflow.");
             rmSync(join(root, "remove.md"));
             return {

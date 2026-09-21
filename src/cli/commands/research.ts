@@ -45,11 +45,6 @@ const outFlag = Flag.String("out").pipe(
   Flag.withDescription("Run-artifact directory override"),
   Flag.optional,
 );
-const inputFlag = Flag.Boolean("input").pipe(
-  Flag.withDescription("Reserved for interactive hosts; embedded CLI workflows fail fast on requests"),
-  Flag.withDefault(false),
-);
-
 const keywordsCommand = Command.make("keywords", {
   page: pageFlag,
   query: queryFlag,
@@ -61,14 +56,17 @@ const keywordsCommand = Command.make("keywords", {
   model: modelFlag,
   opencodeConfig: configFlag,
   out: outFlag,
-  input: inputFlag,
   json: jsonFlag,
 }).pipe(
   Command.withDescription("Discover demand, cluster queries, map pages, and identify gaps"),
   Command.withExamples([
     {
-      command: 'pagegraph research keywords --query "transactional email api" --market us --no-input',
-      description: "Run bounded noninteractive keyword research",
+      command: 'pagegraph research keywords --query "transactional email api" --market us',
+      description: "Research one query in the US market",
+    },
+    {
+      command: 'pagegraph research keywords --query "transactional email api" --market us --json',
+      description: "Emit the versioned workflow run for an agent or CI",
     },
   ]),
   Command.withHandler(
@@ -105,7 +103,6 @@ const keywordsCommand = Command.make("keywords", {
         market: Option.getOrUndefined(flags.market),
         language: Option.getOrUndefined(flags.language),
         refresh: flags.refresh,
-        input: flags.input,
       };
       const result = yield* Effect.tryPromise({
         try: () =>

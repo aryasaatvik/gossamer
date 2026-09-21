@@ -97,9 +97,7 @@ export const runKeywordWorkflow = async (
     model: input.model ?? workflows.opencode.models?.["research.keywords"],
   });
   try {
-    const researched = await host.researchKeywords(promptFor(evidence, input.options), {
-      input: input.options.input,
-    });
+    const researched = await host.researchKeywords(promptFor(evidence, input.options));
     const state = {
       ...researched.state,
       opportunities: researched.state.opportunities.slice(0, input.options.limit),

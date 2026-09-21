@@ -47,7 +47,6 @@ describe("workflow evidence", () => {
         kinds: ["article"],
         limit: 1,
         refresh: false,
-        input: false,
       },
       root,
       "research.keywords",

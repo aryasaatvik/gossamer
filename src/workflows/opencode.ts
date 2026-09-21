@@ -16,10 +16,7 @@ export interface WorkflowHostResult {
 
 export interface WorkflowHost {
   readonly model: { readonly provider: string; readonly id: string };
-  readonly researchKeywords: (
-    prompt: string,
-    options: { readonly input: boolean },
-  ) => Promise<WorkflowHostResult>;
+  readonly researchKeywords: (prompt: string) => Promise<WorkflowHostResult>;
   readonly close: () => Promise<void>;
 }
 
@@ -208,7 +205,7 @@ export const acquireWorkflowHost = async (options: {
 
     return {
       model,
-      researchKeywords: async (prompt, workflowOptions) => {
+      researchKeywords: async (prompt) => {
         const session = await host.sessions.create({
           title: "PageGraph keyword research",
           agent: "seo",

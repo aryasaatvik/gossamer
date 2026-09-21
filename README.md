@@ -250,8 +250,7 @@ Run the first page-backed workflow:
 pagegraph research keywords \
   --query "transactional email api" \
   --market us \
-  --language en \
-  --no-input
+  --language en
 ```
 
 It starts from the selected graph and context files, asks the SEO agent to search Executor's live

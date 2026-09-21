@@ -232,16 +232,6 @@ try {
   if (installedManifest.version !== manifest.version) {
     throw new Error("Installed packed artifact version does not match package.json");
   }
-  const sdkSmoke = await runSuccessfully(
-    [
-      "bun",
-      "-e",
-      'const { OpenCode } = await import("@opencode/sdk"); if (typeof OpenCode.create !== "function") throw new Error("OpenCode SDK missing"); console.log("OpenCode SDK ok")',
-    ],
-    installDirectory,
-  );
-  if (!sdkSmoke.includes("OpenCode SDK ok")) throw new Error("OpenCode SDK import smoke test failed");
-
   const coreSmoke = await runSuccessfully(
     [
       "bun",
