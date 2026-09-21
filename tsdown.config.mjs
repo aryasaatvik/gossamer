@@ -20,6 +20,11 @@ const base = {
   dts: true,
   sourcemap: true,
   platform: "neutral",
+  loader: {
+    ".jsonc": "text",
+    ".md": "text",
+    ".txt": "text",
+  },
   // Neutral resolves no Node builtins, so `node:*` imports are declared external
   // here rather than left to be inferred with a warning.
   deps: { neverBundle: [/^node:/] },

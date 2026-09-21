@@ -1,0 +1,7 @@
+{
+  "default_agent": "seo",
+  "plugins": [
+    // Add your Executor plugin package or local path here.
+    // "opencode-plugin-executor"
+  ]
+}

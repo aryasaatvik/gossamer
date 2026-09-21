@@ -55,6 +55,30 @@ const isCoverageRules = (value: unknown): value is ReadonlyArray<CoverageRule> =
       (rule["minInbound"] as number) > 0,
   );
 
+const isStringRecord = (value: unknown): value is Readonly<Record<string, string>> =>
+  Predicate.isObject(value) && Object.values(value).every(Predicate.isString);
+
+const isStringArrayRecord = (
+  value: unknown,
+): value is Readonly<Record<string, ReadonlyArray<string>>> =>
+  Predicate.isObject(value) && Object.values(value).every(isStringArray);
+
+const isWorkflowConfig = (value: unknown): boolean => {
+  if (!Predicate.isObject(value) || !Predicate.isObject(value["opencode"])) return false;
+  const opencode = value["opencode"];
+  const context = value["context"];
+  return (
+    Predicate.isString(opencode["configDirectory"]) &&
+    Predicate.isString(opencode["defaultModel"]) &&
+    (opencode["models"] === undefined || isStringRecord(opencode["models"])) &&
+    (context === undefined ||
+      (Predicate.isObject(context) &&
+        (context["files"] === undefined || isStringArray(context["files"])) &&
+        (context["byWorkflow"] === undefined || isStringArrayRecord(context["byWorkflow"])))) &&
+    (value["runsDirectory"] === undefined || Predicate.isString(value["runsDirectory"]))
+  );
+};
+
 /**
  * `seo.config.ts` is the consumer's file and may be plain JS, so its types are
  * a suggestion, not a guarantee. Check every field the commands actually read —
@@ -69,7 +93,8 @@ const isSeoCliConfig = (value: unknown): value is SeoCliConfig =>
   (value["contentSignal"] === undefined || Predicate.isString(value["contentSignal"])) &&
   (value["directives"] === undefined || isStringArray(value["directives"])) &&
   (value["transform"] === undefined || Predicate.isFunction(value["transform"])) &&
-  (value["coverage"] === undefined || isCoverageRules(value["coverage"]));
+  (value["coverage"] === undefined || isCoverageRules(value["coverage"])) &&
+  (value["workflows"] === undefined || isWorkflowConfig(value["workflows"]));
 
 /** Import and validate one config path. */
 const loadConfigFile = (configPath: string): Effect.Effect<SeoCliConfig, SeoCliError> =>
@@ -104,6 +129,26 @@ export const loadSeoConfig: Effect.Effect<SeoCliConfig, SeoCliError> = Effect.ge
   }
   return yield* loadConfigFile(configPath);
 });
+
+export interface SeoProjectConfig {
+  readonly config: SeoCliConfig;
+  readonly configPath: string;
+  readonly root: string;
+}
+
+/** Load the config together with the project root that owns it. */
+export const loadSeoProjectConfig: Effect.Effect<SeoProjectConfig, SeoCliError> = Effect.gen(
+  function* () {
+    const cwd = process.cwd();
+    const configPath = findConfigFile(cwd);
+    if (configPath === undefined) {
+      return yield* new SeoCliError({
+        message: `No ${CONFIG_FILENAMES[0]} in ${cwd} or any parent directory.`,
+      });
+    }
+    return { config: yield* loadConfigFile(configPath), configPath, root: dirname(configPath) };
+  },
+);
 
 /**
  * Like {@link loadSeoConfig}, but `undefined` when no config exists. For a

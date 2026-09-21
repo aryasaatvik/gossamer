@@ -30,6 +30,29 @@ export { viteGraphLoader } from "./vite-graph-loader";
 import type { CoverageRule } from "../core/checks";
 import type { SeoGraphLoader } from "./vite-graph-loader";
 
+export interface SeoWorkflowOpenCodeConfig {
+  /** Project-owned OpenCode configuration directory, relative to the project root. */
+  readonly configDirectory: string;
+  /** Default `provider/model` used by agentic workflows. */
+  readonly defaultModel: string;
+  /** Per-workflow `provider/model` overrides. */
+  readonly models?: Readonly<Record<string, string>> | undefined;
+}
+
+export interface SeoWorkflowContextConfig {
+  /** Durable project context included in every workflow prompt. */
+  readonly files?: ReadonlyArray<string> | undefined;
+  /** Additional context files keyed by workflow id. */
+  readonly byWorkflow?: Readonly<Record<string, ReadonlyArray<string>>> | undefined;
+}
+
+export interface SeoWorkflowConfig {
+  readonly opencode: SeoWorkflowOpenCodeConfig;
+  readonly context?: SeoWorkflowContextConfig | undefined;
+  /** Ignored run-artifact directory, relative to the project root. */
+  readonly runsDirectory?: string | undefined;
+}
+
 export interface SeoCliConfig {
   /**
    * Canonical origin the sitemap and robots projections render under, no
@@ -61,6 +84,8 @@ export interface SeoCliConfig {
    * `related` edges. A `--require-inbound` flag overrides this per invocation.
    */
   readonly coverage?: ReadonlyArray<CoverageRule> | undefined;
+  /** Agentic workflow host, context, and artifact settings. */
+  readonly workflows?: SeoWorkflowConfig | undefined;
   /** How the CLI gets the graph. {@link viteGraphLoader} covers the Vite-app case. */
   readonly loadGraph: SeoGraphLoader;
 }

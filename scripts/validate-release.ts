@@ -220,7 +220,7 @@ try {
     ),
   );
   await runSuccessfully(
-    ["npm", "install", "--ignore-scripts", "--omit=optional"],
+    ["npm", "install", "--ignore-scripts"],
     installDirectory,
   );
 
@@ -232,13 +232,6 @@ try {
   if (installedManifest.version !== manifest.version) {
     throw new Error("Installed packed artifact version does not match package.json");
   }
-  if (
-    existsSync(path.join(installDirectory, "node_modules", "effect")) ||
-    existsSync(path.join(installDirectory, "node_modules", "@effect", "platform-bun"))
-  ) {
-    throw new Error("Optional Effect peers were installed into the peer-free consumer fixture");
-  }
-
   const coreSmoke = await runSuccessfully(
     [
       "bun",
@@ -250,8 +243,8 @@ try {
   if (!coreSmoke.includes("core exports ok")) throw new Error("Core export smoke test failed");
 
   const executable = path.join(installDirectory, "node_modules", ".bin", "pagegraph");
-  // The packed bin must run in the peer-free consumer: Effect is bundled into the
-  // CLI, so no optional Effect peer is required to execute it.
+  // The packed bin must run without PageGraph's optional Effect peers. Its own
+  // Effect/Jev runtime is bundled; OpenCode's private runtime is SDK-owned.
   const bundledBin = await runSuccessfully([executable, "--help"], installDirectory);
   if (!bundledBin.includes("pagegraph <subcommand>")) {
     throw new Error("Packed pagegraph bin did not run standalone (Effect must be bundled)");
