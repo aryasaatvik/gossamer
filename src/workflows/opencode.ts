@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 
 import * as Option from "effect/Option";
@@ -15,7 +16,10 @@ export interface WorkflowHostResult {
 
 export interface WorkflowHost {
   readonly model: { readonly provider: string; readonly id: string };
-  readonly research: (prompt: string, options: WorkflowPromptOptions) => Promise<WorkflowHostResult>;
+  readonly research: (
+    prompt: string,
+    options: WorkflowPromptOptions,
+  ) => Promise<WorkflowHostResult>;
   readonly continue: (
     sessionId: string,
     prompt: string,
@@ -25,6 +29,26 @@ export interface WorkflowHost {
 }
 
 type EmbeddedHost = Awaited<ReturnType<typeof import("@opencode/sdk").OpenCode.create>>;
+
+export const assertWorkflowSkillsAvailable = (
+  configDirectory: string,
+  skills: ReadonlyArray<string>,
+): void => {
+  const missing = skills.flatMap((skill) =>
+    [
+      resolve(configDirectory, "skills", skill, "SKILL.md"),
+      resolve(configDirectory, "skills", skill, "references", "executor.md"),
+    ].filter((file) => !existsSync(file)),
+  );
+  if (missing.length === 0) return;
+  throw new Error(
+    [
+      "The PageGraph OpenCode preset is missing files required by this workflow:",
+      ...missing.map((file) => `- ${file}`),
+      "Run `pagegraph init` to add missing preset files; existing user-owned files will not be overwritten.",
+    ].join("\n"),
+  );
+};
 
 export interface WorkflowPermissionRule {
   readonly action: string;
@@ -157,7 +181,9 @@ export const interactionEventError = (event: unknown, sessionId: string): Error 
   if (data === null || typeof data !== "object") return undefined;
   const eventData = data as Record<string, unknown>;
   if (record["type"] === "permission.asked" && eventData["sessionID"] === sessionId) {
-    return new Error("OpenCode requested permission; embedded PageGraph workflows are noninteractive.");
+    return new Error(
+      "OpenCode requested permission; embedded PageGraph workflows are noninteractive.",
+    );
   }
   if (record["type"] === "form.created") {
     const form = eventData["form"];
@@ -166,7 +192,9 @@ export const interactionEventError = (event: unknown, sessionId: string): Error 
       typeof form === "object" &&
       (form as Record<string, unknown>)["sessionID"] === sessionId
     ) {
-      return new Error("OpenCode requested a form; embedded PageGraph workflows are noninteractive.");
+      return new Error(
+        "OpenCode requested a form; embedded PageGraph workflows are noninteractive.",
+      );
     }
   }
   return undefined;
@@ -236,6 +264,7 @@ export const acquireWorkflowHost = async (options: {
       prompt: string,
       workflowOptions: WorkflowPromptOptions,
     ): Promise<WorkflowHostResult> => {
+      assertWorkflowSkillsAvailable(configDirectory, workflowOptions.skills);
       if (workflowOptions.permissions !== undefined) {
         await host.sessions.update({
           sessionID: sessionId,
@@ -272,7 +301,9 @@ export const acquireWorkflowHost = async (options: {
           model: { providerID: model.provider, id: model.id },
           location,
           permissions:
-            workflowOptions.permissions === undefined ? undefined : [...workflowOptions.permissions],
+            workflowOptions.permissions === undefined
+              ? undefined
+              : [...workflowOptions.permissions],
         });
         const result = await complete(session.id, prompt, workflowOptions);
         if (result.executor.searches.length === 0 || result.executor.calls.length === 0) {
