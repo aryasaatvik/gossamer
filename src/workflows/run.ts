@@ -7,13 +7,13 @@ import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 import type { SeoCliConfig } from "../config";
 import type { SeoGraph } from "../core/graph";
 import type { DecisionBatchReport } from "../decide/record";
-import { createRunId, writeRunBundle } from "./artifact";
+import { createRunId, writeResearchCheckpoint, writeRunBundle } from "./artifact";
 import { getWorkflowSpec } from "./catalog";
 import { collectWorkflowEvidence } from "./evidence";
 import { changedFiles, inspectGit } from "./git";
 import type { WorkflowMutationPolicy } from "./mutation";
 import { createWorkflowMutationPolicy, repositoryMutationPermissionRules } from "./mutation";
-import type { WorkflowId, WorkflowRunV1, WorkflowTargetOptions } from "./model";
+import type { WorkflowId, WorkflowResearchCheckpointV1, WorkflowRunV1, WorkflowTargetOptions } from "./model";
 import type { WorkflowHost } from "./opencode";
 import { acquireWorkflowHost } from "./opencode";
 import actionPromptSource from "./prompts/action.md" with { type: "text" };
@@ -74,6 +74,7 @@ const researchPrompt = (
   TextTemplate.from(researchPromptSource)
     .values({
       workflow: spec.id,
+      limit: options.limit,
       instructions: spec.researchInstructions,
       skills: spec.skills.join(", "),
       stateSchema: JSON.stringify(spec.stateJsonSchema),
@@ -171,44 +172,76 @@ export const runWorkflow = async (
       const error = spec.validateDecisionInput(item);
       if (error !== undefined) throw new Error(error);
     }
-    const decisionReport = await (dependencies.decide ?? defaultDecide)(decisionInputs, spec);
-    const acted = spec.mutatesFiles
-      ? await host.continue(researched.sessionId, actionPrompt(spec, state, decisionReport, mutation), {
-          skills: spec.skills,
-          permissions: actionPermissions,
-        })
-      : researched;
-    const gitAfter = inspectGit(input.root);
-    const files = changedFiles(gitAtStart, gitAfter);
-    if ((!spec.mutatesFiles || input.options.dryRun) && files.length > 0) {
-      throw new Error(`${spec.id} changed repository files while running in read-only mode: ${files.join(", ")}`);
-    }
-    const run: WorkflowRunV1 = {
-      kind: "pagegraph-workflow-run",
+    const runsDirectory = input.out ?? workflows.runsDirectory ?? ".pagegraph/runs";
+    const checkpoint: WorkflowResearchCheckpointV1 = {
+      kind: "pagegraph-workflow-research-checkpoint",
       schemaVersion: 1,
       id,
       workflow: spec.id,
       startedAt: started.toISOString(),
-      finishedAt: now().toISOString(),
-      project: { root: input.root, head: gitAtStart.head, dirtyAtStart: gitAtStart.dirty },
+      checkpointedAt: now().toISOString(),
+      project: {
+        root: input.root,
+        head: gitAtStart.head,
+        dirtyAtStart: gitAtStart.dirty,
+        filesAtStart: gitAtStart.files,
+      },
       options: input.options,
-      model: host.model,
-      targets: {
-        pages: evidence.graph.nodes.map((node) => node.path),
-        queries: input.options.queries,
-        kinds: input.options.kinds,
+      evidence: { ...evidence, executor: researched.executor },
+      state,
+      decisionInputs,
+      opencode: {
+        agent: "seo",
+        sessionId: researched.sessionId,
+        model: host.model,
+        transcript: researched.transcript,
       },
-      evidence: { ...evidence, executor: acted.executor },
-      decisions: [decisionArtifact(spec, decisionInputs, decisionReport)],
-      changes: {
-        files,
-        providerCalls: acted.executor.calls.map((call) => call.tool),
-      },
-      result: spec.mutatesFiles ? acted.state : state,
-      opencode: { agent: "seo", sessionId: acted.sessionId, transcript: acted.transcript },
     };
-    const runsDirectory = input.out ?? workflows.runsDirectory ?? ".pagegraph/runs";
-    return { run, directory: writeRunBundle(input.root, runsDirectory, run) };
+    const checkpointPath = writeResearchCheckpoint(input.root, runsDirectory, checkpoint);
+    const gitAtCheckpoint = inspectGit(input.root);
+
+    try {
+      const decisionReport = await (dependencies.decide ?? defaultDecide)(decisionInputs, spec);
+      const acted = spec.mutatesFiles
+        ? await host.continue(researched.sessionId, actionPrompt(spec, state, decisionReport, mutation), {
+            skills: spec.skills,
+            permissions: actionPermissions,
+          })
+        : researched;
+      const gitAfter = inspectGit(input.root);
+      const files = changedFiles(gitAtCheckpoint, gitAfter);
+      if ((!spec.mutatesFiles || input.options.dryRun) && files.length > 0) {
+        throw new Error(`${spec.id} changed repository files while running in read-only mode: ${files.join(", ")}`);
+      }
+      const run: WorkflowRunV1 = {
+        kind: "pagegraph-workflow-run",
+        schemaVersion: 1,
+        id,
+        workflow: spec.id,
+        startedAt: started.toISOString(),
+        finishedAt: now().toISOString(),
+        project: { root: input.root, head: gitAtStart.head, dirtyAtStart: gitAtStart.dirty },
+        options: input.options,
+        model: host.model,
+        targets: {
+          pages: evidence.graph.nodes.map((node) => node.path),
+          queries: input.options.queries,
+          kinds: input.options.kinds,
+        },
+        evidence: { ...evidence, executor: acted.executor },
+        decisions: [decisionArtifact(spec, decisionInputs, decisionReport)],
+        changes: {
+          files,
+          providerCalls: acted.executor.calls.map((call) => call.tool),
+        },
+        result: spec.mutatesFiles ? acted.state : state,
+        opencode: { agent: "seo", sessionId: acted.sessionId, transcript: acted.transcript },
+      };
+      return { run, directory: writeRunBundle(input.root, runsDirectory, run) };
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : String(cause);
+      throw new Error(`${message}\nResearch checkpoint: ${checkpointPath}`, { cause });
+    }
   } finally {
     await host.close();
   }

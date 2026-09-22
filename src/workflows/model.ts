@@ -1,6 +1,18 @@
 import type { DecisionBatchReport } from "../decide/record";
 import type { SerializedGraph } from "../cli/serialize";
 
+/** A selected page's direct relationship to a page outside the workflow target set. */
+export interface WorkflowGraphNeighbor {
+  readonly edge: SerializedGraph["edges"][number];
+  readonly node: SerializedGraph["nodes"][number];
+}
+
+/** Contextual graph relationships kept outside the bounded target graph. */
+export interface WorkflowGraphNeighborhood {
+  readonly inbound: ReadonlyArray<WorkflowGraphNeighbor>;
+  readonly outbound: ReadonlyArray<WorkflowGraphNeighbor>;
+}
+
 export interface ExecutorEvidenceRecord {
   readonly tool: string;
   readonly input: unknown;
@@ -79,6 +91,8 @@ export interface WorkflowRunV1 {
   };
   readonly evidence: {
     readonly graph: SerializedGraph;
+    /** Optional so existing V1 run artifacts remain readable. */
+    readonly neighborhood?: WorkflowGraphNeighborhood | undefined;
     readonly sources: ReadonlyArray<{ readonly path: string; readonly content: string }>;
     readonly executor: ExecutorEvidence;
   };
@@ -96,4 +110,35 @@ export interface WorkflowRunV1 {
   };
   readonly result: unknown;
   readonly opencode: { readonly agent: "seo"; readonly sessionId: string; readonly transcript: unknown };
+}
+
+/** Incomplete research-stage evidence; it is not a final workflow recommendation. */
+export interface WorkflowResearchCheckpointV1 {
+  readonly kind: "pagegraph-workflow-research-checkpoint";
+  readonly schemaVersion: 1;
+  readonly id: string;
+  readonly workflow: WorkflowId;
+  readonly startedAt: string;
+  readonly checkpointedAt: string;
+  readonly project: {
+    readonly root: string;
+    readonly head?: string | undefined;
+    readonly dirtyAtStart: boolean;
+    readonly filesAtStart: ReadonlyArray<string>;
+  };
+  readonly options: WorkflowTargetOptions;
+  readonly evidence: {
+    readonly graph: SerializedGraph;
+    readonly neighborhood: WorkflowGraphNeighborhood;
+    readonly sources: ReadonlyArray<{ readonly path: string; readonly content: string }>;
+    readonly executor: ExecutorEvidence;
+  };
+  readonly state: unknown;
+  readonly decisionInputs: ReadonlyArray<unknown>;
+  readonly opencode: {
+    readonly agent: "seo";
+    readonly sessionId: string;
+    readonly model: { readonly provider: string; readonly id: string };
+    readonly transcript: unknown;
+  };
 }

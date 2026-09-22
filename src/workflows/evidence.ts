@@ -3,8 +3,8 @@ import { resolve } from "node:path";
 
 import type { SeoWorkflowContextConfig } from "../config";
 import type { SeoGraph } from "../core/graph";
-import { serializeGraph } from "../cli/serialize";
-import type { WorkflowId, WorkflowTargetOptions } from "./model";
+import { serializeGraph, serializeNode } from "../cli/serialize";
+import type { WorkflowGraphNeighborhood, WorkflowId, WorkflowTargetOptions } from "./model";
 
 const matches = (value: string, pattern: string): boolean => {
   if (pattern === value) return true;
@@ -26,6 +26,24 @@ export const selectGraph = (graph: SeoGraph, options: WorkflowTargetOptions): Se
   };
 };
 
+const selectNeighborhood = (graph: SeoGraph, targetPaths: ReadonlySet<string>): WorkflowGraphNeighborhood => {
+  const inbound: Array<WorkflowGraphNeighborhood["inbound"][number]> = [];
+  const outbound: Array<WorkflowGraphNeighborhood["outbound"][number]> = [];
+
+  for (const edge of graph.edges) {
+    if (targetPaths.has(edge.to) && !targetPaths.has(edge.from)) {
+      const node = graph.nodes.get(edge.from);
+      if (node !== undefined) inbound.push({ edge, node: serializeNode(node) });
+    }
+    if (targetPaths.has(edge.from) && !targetPaths.has(edge.to)) {
+      const node = graph.nodes.get(edge.to);
+      if (node !== undefined) outbound.push({ edge, node: serializeNode(node) });
+    }
+  }
+
+  return { inbound, outbound };
+};
+
 export const collectContextFiles = (
   root: string,
   workflow: WorkflowId,
@@ -41,7 +59,11 @@ export const collectWorkflowEvidence = (
   root: string,
   workflow: WorkflowId,
   context: SeoWorkflowContextConfig | undefined,
-) => ({
-  graph: serializeGraph(selectGraph(graph, options)),
-  sources: collectContextFiles(root, workflow, context),
-});
+) => {
+  const selected = selectGraph(graph, options);
+  return {
+    graph: serializeGraph(selected),
+    neighborhood: selectNeighborhood(graph, new Set(selected.nodes.keys())),
+    sources: collectContextFiles(root, workflow, context),
+  };
+};
