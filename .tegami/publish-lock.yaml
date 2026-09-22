@@ -1,10 +1,10 @@
 core:changelogs:
-  - content: "---\npackages:\n  pagegraph:\n    type: patch\n---\n\n### Attribute Executor evidence from structured search results\n\nPageGraph now recognizes tool identifiers returned in Executor search-result `path` fields, including\nJSON-encoded output, so valid provider calls satisfy the workflow evidence gate. Discovery stays\nlimited to those structured fields, preventing unrelated dotted metadata from authorizing a call.\n"
-    filename: 2026-09-21-executor-evidence-attribution.md
+  - content: "---\npackages:\n  pagegraph:\n    type: patch\n---\n\n### Preserve workflow evidence and diagnose interrupted research\n\nSelected pages retain their surrounding link relationships, and Executor evidence requires actual\ncompleted provider invocations. Research instructions inspect current tool schemas and respect the\nrequested scope. OpenCode completions support configurable deadlines, bounded interruption, and\nactivity diagnostics. Validated research is saved before decision inference so downstream failures\nretain useful evidence. Git mutation checks handle nested project roots and changed submodules.\n"
+    filename: 2026-09-22-workflow-evidence-and-checkpoints.md
     v: 0.0.0
 core:packages:
   - changelogIds:
-      - 2026-09-21-executor-evidence-attribution.md
+      - 2026-09-22-workflow-evidence-and-checkpoints.md
     id: npm:pagegraph
     updated: true
 npm:packages:
