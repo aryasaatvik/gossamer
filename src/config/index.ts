@@ -37,6 +37,8 @@ export interface SeoWorkflowOpenCodeConfig {
   readonly defaultModel: string;
   /** Per-workflow `provider/model` overrides. */
   readonly models?: Readonly<Record<string, string>> | undefined;
+  /** Per-completion deadline in milliseconds, including JSON repair; defaults to 180000. */
+  readonly timeoutMs?: number | undefined;
 }
 
 export interface SeoWorkflowContextConfig {

@@ -29,6 +29,9 @@ export interface WorkflowHost {
 }
 
 type EmbeddedHost = Awaited<ReturnType<typeof import("@opencode/sdk").OpenCode.create>>;
+type WorkflowLogEvent = ReturnType<EmbeddedHost["sessions"]["log"]> extends AsyncIterable<infer Event>
+  ? Event
+  : never;
 
 interface PluginListItem {
   readonly source: unknown;
@@ -159,10 +162,21 @@ const ToolPartSchema = Schema.Struct({
     status: Schema.String,
     input: Schema.optionalKey(Schema.Unknown),
     content: Schema.optionalKey(Schema.Unknown),
+    error: Schema.optionalKey(Schema.Unknown),
+    metadata: Schema.optionalKey(Schema.Unknown),
   }),
 });
 type ToolPart = typeof ToolPartSchema.Type;
 const decodeToolPart = Schema.decodeUnknownOption(ToolPartSchema);
+
+const CodeModeCallSchema = Schema.Struct({
+  tool: Schema.String,
+  status: Schema.Literals(["running", "completed", "error"]),
+  input: Schema.optionalKey(Schema.Unknown),
+});
+const CodeModeMetadataSchema = Schema.Struct({ toolCalls: Schema.Array(CodeModeCallSchema) });
+type CodeModeCall = typeof CodeModeCallSchema.Type;
+const decodeCodeModeMetadata = Schema.decodeUnknownOption(CodeModeMetadataSchema);
 
 const toolParts = (transcript: unknown): ReadonlyArray<ToolPart> =>
   decodeTranscript(transcript).messages.flatMap((message) => {
@@ -173,20 +187,6 @@ const toolParts = (transcript: unknown): ReadonlyArray<ToolPart> =>
       return Option.isSome(decoded) ? [decoded.value] : [];
     });
   });
-
-const toolText = (value: unknown): string => {
-  if (typeof value === "string") return value;
-  if (Array.isArray(value)) return value.map(toolText).join("\n");
-  if (value === null || typeof value !== "object") return "";
-  const record = value as Record<string, unknown>;
-  if (record["type"] === "text" && typeof record["text"] === "string") return record["text"];
-  return Object.values(record).map(toolText).join("\n");
-};
-
-const pathsIn = (value: unknown): ReadonlyArray<string> =>
-  [...toolText(value).matchAll(/tools\.([A-Za-z0-9_.-]+)/g)]
-    .map((match) => match[1] ?? "")
-    .filter(Boolean);
 
 const toolPathPattern = /^[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)+$/;
 
@@ -220,7 +220,7 @@ const pathsInSearchOutput = (value: unknown): ReadonlyArray<string> => {
 const evidenceRecord = (part: ToolPart): ExecutorEvidenceRecord => ({
   tool: part.name,
   input: part.state.input ?? null,
-  output: part.state.content ?? null,
+  output: part.state.content ?? part.state.error ?? null,
 });
 
 export const collectExecutorEvidence = (transcript: unknown): ExecutorEvidence => {
@@ -228,30 +228,52 @@ export const collectExecutorEvidence = (transcript: unknown): ExecutorEvidence =
   const searches: Array<ExecutorEvidenceRecord> = [];
   const calls: Array<ExecutorEvidenceRecord> = [];
   for (const part of toolParts(transcript)) {
-    const inputPaths = pathsIn(part.state.input);
-    const inputText = toolText(part.state.input);
-    const isSearch =
-      part.name === "executor_search" ||
-      part.name === "executor.search" ||
-      inputPaths.some((path) => path === "executor.search");
-    if (isSearch) {
+    const metadata = decodeCodeModeMetadata(part.state.metadata);
+    if (Option.isSome(metadata)) {
+      const invocations = metadata.value.toolCalls;
+      for (const invocation of invocations) {
+        if (invocation.status !== "completed") continue;
+        const record = codeModeEvidenceRecord(invocation, part.state.content);
+        if (invocation.tool === "executor.search") {
+          for (const path of pathsInSearchOutput(part.state.content)) {
+            if (path !== "executor.search") discovered.add(path);
+          }
+          searches.push(record);
+          continue;
+        }
+        if ([...discovered].some((path) => matchesToolPath(invocation.tool, path))) calls.push(record);
+      }
+      continue;
+    }
+    if (
+      part.state.status === "completed" &&
+      (part.name === "executor_search" || part.name === "executor.search")
+    ) {
       for (const path of pathsInSearchOutput(part.state.content)) {
         if (path !== "executor.search") discovered.add(path);
       }
       searches.push(evidenceRecord(part));
       continue;
     }
-    const directlyDiscovered = [...discovered].some(
-      (path) =>
-        part.name === path ||
-        part.name === path.replaceAll(".", "_") ||
-        inputPaths.includes(path) ||
-        inputText.includes(path),
-    );
+    const directlyDiscovered =
+      part.state.status === "completed" &&
+      [...discovered].some((path) => matchesToolPath(part.name, path));
     if (directlyDiscovered) calls.push(evidenceRecord(part));
   }
   return { searches, calls };
 };
+
+const codeModeEvidenceRecord = (
+  invocation: CodeModeCall,
+  codeModeOutput: unknown,
+): ExecutorEvidenceRecord => ({
+  tool: invocation.tool,
+  input: invocation.input ?? null,
+  output: { status: invocation.status, scope: "shared CodeMode execution result", content: codeModeOutput ?? null },
+});
+
+const matchesToolPath = (tool: string, path: string): boolean =>
+  tool === path || tool === path.replaceAll(".", "_");
 
 export const interactionEventError = (event: unknown, sessionId: string): Error | undefined => {
   if (event === null || typeof event !== "object") return undefined;
@@ -279,6 +301,65 @@ export const interactionEventError = (event: unknown, sessionId: string): Error 
   return undefined;
 };
 
+interface WorkflowActivity {
+  modelSteps: number;
+  completedTools: number;
+  readonly toolNames: Map<string, string>;
+  lastModel?: string;
+  lastTool?: {
+    readonly id: string;
+    readonly name: string;
+    readonly status: "input" | "called" | "succeeded" | "failed";
+  };
+  lastActivity?: { readonly type: string; readonly at: string; readonly seq?: number };
+}
+
+const recordWorkflowActivity = (activity: WorkflowActivity, event: WorkflowLogEvent): void => {
+  if (event.type === "log.synced") return;
+  activity.lastActivity = {
+    type: event.type,
+    at: new Date().toISOString(),
+    seq: event.durable.seq,
+  };
+  if (event.type === "session.step.started") {
+    activity.modelSteps += 1;
+    activity.lastModel = `${event.data.model.providerID}/${event.data.model.id}`;
+    return;
+  }
+  if (event.type === "session.tool.input.started") {
+    activity.toolNames.set(event.data.id, event.data.name);
+    activity.lastTool = { id: event.data.id, name: event.data.name, status: "input" };
+    return;
+  }
+  if (event.type === "session.tool.called") {
+    activity.lastTool = {
+      id: event.data.id,
+      name: activity.toolNames.get(event.data.id) ?? event.data.id,
+      status: "called",
+    };
+    return;
+  }
+  if (event.type === "session.tool.success" || event.type === "session.tool.failed") {
+    activity.completedTools += 1;
+    activity.lastTool = {
+      id: event.data.id,
+      name: activity.toolNames.get(event.data.id) ?? event.data.id,
+      status: event.type === "session.tool.success" ? "succeeded" : "failed",
+    };
+  }
+};
+
+const describeWorkflowActivity = (activity: WorkflowActivity, stage: string): string => {
+  const lastActivity = activity.lastActivity
+    ? `${activity.lastActivity.type} at ${activity.lastActivity.at}${activity.lastActivity.seq === undefined ? "" : ` (seq ${activity.lastActivity.seq})`}`
+    : `none observed during ${stage}`;
+  const lastTool = activity.lastTool
+    ? `; last tool ${activity.lastTool.name} (${activity.lastTool.id}, ${activity.lastTool.status})`
+    : "";
+  const model = activity.lastModel ? `; last model ${activity.lastModel}` : "";
+  return `Model steps: ${activity.modelSteps}; completed tools: ${activity.completedTools}; last activity: ${lastActivity}${model}${lastTool}.`;
+};
+
 export const waitForIdle = async (
   host: EmbeddedHost,
   sessionId: string,
@@ -286,15 +367,19 @@ export const waitForIdle = async (
     readonly timeoutMs: number;
     readonly configuredTimeoutMs?: number | undefined;
     readonly after?: number | undefined;
+    readonly signal?: AbortSignal | undefined;
+    readonly activity?: WorkflowActivity | undefined;
   },
 ): Promise<number> => {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), options.timeoutMs);
+  const controller = options.signal === undefined ? new AbortController() : undefined;
+  const signal = options.signal ?? controller!.signal;
+  const timer = controller === undefined ? undefined : setTimeout(() => controller.abort(), options.timeoutMs);
   try {
     for await (const event of host.sessions.log(
       { sessionID: sessionId, follow: true, after: options.after },
-      { signal: controller.signal },
+      { signal },
     )) {
+      if (options.activity !== undefined) recordWorkflowActivity(options.activity, event);
       const interactionError = interactionEventError(event, sessionId);
       if (interactionError !== undefined) throw interactionError;
       if (event.type === "session.execution.succeeded" && event.data.sessionID === sessionId) {
@@ -308,7 +393,7 @@ export const waitForIdle = async (
       }
     }
   } catch (cause) {
-    if (controller.signal.aborted) {
+    if (controller?.signal.aborted) {
       throw new Error(
         `OpenCode session did not complete within ${options.configuredTimeoutMs ?? options.timeoutMs}ms.`,
         { cause },
@@ -316,9 +401,63 @@ export const waitForIdle = async (
     }
     throw cause;
   } finally {
-    clearTimeout(timer);
+    if (timer !== undefined) clearTimeout(timer);
   }
   throw new Error("OpenCode session log ended before the SEO agent completed.");
+};
+
+export const runWorkflowTurn = async (
+  host: EmbeddedHost,
+  sessionId: string,
+  prompt: string,
+  options: {
+    readonly timeoutMs: number;
+    readonly configuredTimeoutMs: number;
+    readonly stage: string;
+    readonly after?: number | undefined;
+    readonly skills?: ReadonlyArray<string> | undefined;
+    readonly activity: WorkflowActivity;
+  },
+): Promise<number> => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), options.timeoutMs);
+  let stage = options.stage;
+  try {
+    await host.sessions.prompt(
+      {
+        sessionID: sessionId,
+        text: prompt,
+        ...(options.skills === undefined ? {} : { skills: options.skills.map((id) => ({ id })) }),
+      },
+      { signal: controller.signal },
+    );
+    if (stage === "prompt admission") stage = "model execution";
+    return await waitForIdle(host, sessionId, {
+      timeoutMs: options.timeoutMs,
+      configuredTimeoutMs: options.configuredTimeoutMs,
+      after: options.after,
+      signal: controller.signal,
+      activity: options.activity,
+    });
+  } catch (cause) {
+    if (!controller.signal.aborted) throw cause;
+    let interruption = "unknown";
+    try {
+      interruption = (
+        await host.sessions.interrupt({ sessionID: sessionId }, { signal: AbortSignal.timeout(5_000) })
+      ).interrupted
+        ? "active execution interrupted"
+        : "no active execution to interrupt";
+    } catch (interruptCause) {
+      interruption = `interrupt request failed: ${interruptCause instanceof Error ? interruptCause.message : String(interruptCause)}`;
+    }
+    throw new Error(
+      `OpenCode session did not complete within ${options.configuredTimeoutMs}ms during ${stage}; ${describeWorkflowActivity(options.activity, stage)} Timeout handling: ${interruption}.`,
+      { cause },
+    );
+  } finally {
+    clearTimeout(timer);
+  }
 };
 
 export const acquireWorkflowHost = async (options: {
@@ -358,18 +497,17 @@ export const acquireWorkflowHost = async (options: {
           permissions: [...workflowOptions.permissions],
         });
       }
-      const configuredTimeoutMs = options.timeoutMs ?? 180_000;
+      const configuredTimeoutMs = options.timeoutMs ?? options.config.timeoutMs ?? 180_000;
       const deadline = Date.now() + configuredTimeoutMs;
       const remaining = (): number => Math.max(0, deadline - Date.now());
-      await host.sessions.prompt({
-        sessionID: sessionId,
-        text: prompt,
-        skills: workflowOptions.skills.map((id) => ({ id })),
-      });
-      let cursor = await waitForIdle(host, sessionId, {
+      const activity: WorkflowActivity = { modelSteps: 0, completedTools: 0, toolNames: new Map() };
+      let cursor = await runWorkflowTurn(host, sessionId, prompt, {
         timeoutMs: remaining(),
         configuredTimeoutMs,
+        stage: "prompt admission",
         after: cursors.get(sessionId),
+        skills: workflowOptions.skills,
+        activity,
       });
       cursors.set(sessionId, cursor);
       let transcript = await host.sessions.export({ sessionID: sessionId, sanitize: false });
@@ -380,11 +518,12 @@ export const acquireWorkflowHost = async (options: {
           permissions: [{ action: "*", resource: "*", effect: "deny" }],
         });
         try {
-          await host.sessions.prompt({ sessionID: sessionId, text: STATE_REPAIR_PROMPT });
-          cursor = await waitForIdle(host, sessionId, {
+          cursor = await runWorkflowTurn(host, sessionId, STATE_REPAIR_PROMPT, {
             timeoutMs: remaining(),
             configuredTimeoutMs,
+            stage: "workflow state repair",
             after: cursor,
+            activity,
           });
           cursors.set(sessionId, cursor);
           transcript = await host.sessions.export({ sessionID: sessionId, sanitize: false });

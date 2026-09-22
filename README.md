@@ -229,6 +229,8 @@ export default defineSeoConfig({
     opencode: {
       configDirectory: ".pagegraph/opencode",
       defaultModel: "openrouter/example/model",
+      // Optional per-completion budget in milliseconds; default 180000.
+      timeoutMs: 360_000,
       models: {
         "research.keywords": "openrouter/example/research-model",
       },
@@ -254,9 +256,23 @@ pagegraph research keywords \
 ```
 
 Every workflow starts from the selected graph and context files, asks the SEO agent to search
-Executor's live catalog and compose suitable tools, then evaluates its structured observations with
-Jev. Tool paths are discovered at runtime; the generated skills contain editable starter recipes,
-not a fixed integration list.
+Executor's live catalog and inspect the discovered tools' argument schemas, then evaluates its
+structured observations with Jev. Tool paths are discovered at runtime; the generated skills contain
+editable starter recipes, not a fixed integration list.
+
+`workflows.opencode.timeoutMs` sets the positive integer deadline in milliseconds for each OpenCode
+completion (maximum `2147483647`). It covers prompt admission, model execution, and any workflow JSON
+repair prompt. A later action or continuation turn gets a separate budget. The default is `180000`.
+
+Selecting pages preserves their incoming and outgoing relationships to non-selected pages in
+`evidence.neighborhood`. Those neighbors supply architecture context without becoming workflow
+targets or consuming `--limit`. The agent receives the limit before research, and PageGraph also caps
+the decoded result before decisions.
+
+After research is validated, the run directory contains `research.json`: an incomplete checkpoint
+with the collected evidence, decision inputs, and OpenCode transcript. A downstream failure reports
+its path so the evidence remains available for diagnosis. Only a completed workflow writes
+`run.json` and `summary.md`; a research checkpoint is not a final recommendation.
 
 | Command | Result |
 | --- | --- |

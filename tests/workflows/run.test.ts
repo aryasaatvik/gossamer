@@ -1,9 +1,9 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { SeoCliConfig } from "../../src/config";
 import type { SeoGraph } from "../../src/core/graph";
@@ -11,6 +11,12 @@ import type { DecisionBatchReport } from "../../src/decide/record";
 import type { WorkflowId } from "../../src/workflows/model";
 import type { WorkflowHostResult } from "../../src/workflows/opencode";
 import { runKeywordWorkflow, runWorkflow } from "../../src/workflows/run";
+
+// Vite treats Markdown imports as asset URLs even when Vitest runs under Bun.
+vi.mock("../../src/workflows/prompts/research.md", async () => {
+  const { readFile } = await import("node:fs/promises");
+  return { default: await readFile(new URL("../../src/workflows/prompts/research.md", import.meta.url), "utf8") };
+});
 
 const directories: Array<string> = [];
 const git = (root: string, ...args: ReadonlyArray<string>): void => {
@@ -217,7 +223,8 @@ describe("workflow runner", () => {
         })(),
         acquireHost: async () => ({
           model: { provider: "test", id: "model" },
-          research: async (_prompt, workflowOptions) => {
+          research: async (prompt, workflowOptions) => {
+            expect(prompt).toContain("Return at most 1 items or opportunities.");
             expect(workflowOptions.skills).toEqual(["keyword-research"]);
             expect(workflowOptions.permissions).toEqual(
               expect.arrayContaining([expect.objectContaining({ action: "edit", effect: "deny" })]),
@@ -246,10 +253,127 @@ describe("workflow runner", () => {
       result: { opportunities: [{ query: "email api" }] },
     });
     expect(existsSync(join(result.directory, "summary.md"))).toBe(true);
+    expect(existsSync(join(result.directory, "research.json"))).toBe(true);
     expect(JSON.parse(readFileSync(join(result.directory, "run.json"), "utf8"))).toMatchObject({
       evidence: { executor: executorEvidence },
       decisions: [{ family: "workflow-keywords" }],
     });
+  });
+
+  it("preserves validated research when the decision provider fails", async () => {
+    const { root, graph, config } = fixture();
+    const providerError = new Error("decision transport failed");
+    let closed = false;
+
+    let thrown: unknown;
+    try {
+      await runKeywordWorkflow(
+        { config, graph, root, options },
+        {
+          now: () => new Date("2026-09-21T10:00:00.000Z"),
+          acquireHost: async () => ({
+            model: { provider: "test", id: "model" },
+            research: async () => ({
+              state: { summary: "One supported opportunity.", opportunities: [{
+                query: "email api",
+                intent: "commercial",
+                rationale: "Matches the pricing page.",
+                candidates: [{ path: "/pricing", title: "Pricing", excerpt: "Email API pricing" }],
+                evidence: ["executor.search -> keyword tool"],
+              }] },
+              sessionId: "session-failed-decision",
+              transcript: { messages: ["research transcript"] },
+              executor: executorEvidence,
+            }),
+            continue: async () => {
+              throw new Error("read-only workflow must not continue into an action turn");
+            },
+            close: async () => {
+              closed = true;
+            },
+          }),
+          decide: async () => {
+            throw providerError;
+          },
+        },
+      );
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(Error);
+    expect((thrown as Error).cause).toBe(providerError);
+    const message = (thrown as Error).message;
+    const match = message.match(/Research checkpoint: (.+)$/);
+    expect(match).not.toBeNull();
+    const checkpointPath = match?.[1];
+    expect(checkpointPath).toBeDefined();
+    expect(closed).toBe(true);
+
+    const checkpoint = JSON.parse(readFileSync(checkpointPath!, "utf8")) as Record<string, any>;
+    expect(checkpoint).toMatchObject({
+      kind: "pagegraph-workflow-research-checkpoint",
+      schemaVersion: 1,
+      workflow: "research.keywords",
+      project: { root, dirtyAtStart: false, filesAtStart: [] },
+      evidence: { executor: executorEvidence },
+      state: { summary: "One supported opportunity." },
+      decisionInputs: [{ query: "email api" }],
+      opencode: {
+        agent: "seo",
+        sessionId: "session-failed-decision",
+        model: { provider: "test", id: "model" },
+        transcript: { messages: ["research transcript"] },
+      },
+    });
+    const directory = dirname(checkpointPath!);
+    expect(existsSync(join(directory, "run.json"))).toBe(false);
+    expect(existsSync(join(directory, "summary.md"))).toBe(false);
+  });
+
+  it("detects checkpoint edits made after research during a read-only workflow", async () => {
+    const { root, graph, config } = fixture();
+    let thrown: unknown;
+
+    try {
+      await runKeywordWorkflow(
+        { config, graph, root, options },
+        {
+          acquireHost: async () => ({
+            model: { provider: "test", id: "model" },
+            research: async () => ({
+              state: { summary: "One supported opportunity.", opportunities: [{
+                query: "email api",
+                intent: "commercial",
+                rationale: "Matches the pricing page.",
+                candidates: [{ path: "/pricing", title: "Pricing", excerpt: "Email API pricing" }],
+                evidence: ["executor.search -> keyword tool"],
+              }] },
+              sessionId: "session-mutated-checkpoint",
+              transcript: { messages: ["research transcript"] },
+              executor: executorEvidence,
+            }),
+            continue: async () => {
+              throw new Error("read-only workflow must not continue into an action turn");
+            },
+            close: async () => {},
+          }),
+          decide: async () => {
+            const runId = readdirSync(join(root, ".pagegraph", "runs"))[0];
+            const checkpointPath = join(root, ".pagegraph", "runs", runId!, "research.json");
+            writeFileSync(checkpointPath, `${readFileSync(checkpointPath, "utf8")}\nchanged after checkpoint\n`);
+            return report("workflow-keywords");
+          },
+        },
+      );
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(Error);
+    expect((thrown as Error).cause).toBeInstanceOf(Error);
+    expect((thrown as Error).message).toContain("changed repository files while running in read-only mode");
+    expect((thrown as Error).message).toContain("Research checkpoint:");
   });
 
   it.each(mutationCases)("applies $name in the same session and records its source diff", async (testCase) => {

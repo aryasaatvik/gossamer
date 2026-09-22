@@ -58,6 +58,9 @@ const isCoverageRules = (value: unknown): value is ReadonlyArray<CoverageRule> =
 const isStringRecord = (value: unknown): value is Readonly<Record<string, string>> =>
   Predicate.isObject(value) && Object.values(value).every(Predicate.isString);
 
+const isWorkflowTimeout = (value: unknown): value is number =>
+  Number.isSafeInteger(value) && (value as number) > 0 && (value as number) <= 2_147_483_647;
+
 const isStringArrayRecord = (
   value: unknown,
 ): value is Readonly<Record<string, ReadonlyArray<string>>> =>
@@ -71,6 +74,7 @@ const isWorkflowConfig = (value: unknown): boolean => {
     Predicate.isString(opencode["configDirectory"]) &&
     Predicate.isString(opencode["defaultModel"]) &&
     (opencode["models"] === undefined || isStringRecord(opencode["models"])) &&
+    (opencode["timeoutMs"] === undefined || isWorkflowTimeout(opencode["timeoutMs"])) &&
     (context === undefined ||
       (Predicate.isObject(context) &&
         (context["files"] === undefined || isStringArray(context["files"])) &&
