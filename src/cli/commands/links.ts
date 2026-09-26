@@ -15,11 +15,13 @@ import {
   diffLinkGraph,
   RENDERED_EDGE_ARTIFACT_SCHEMA_VERSION,
   renderedGraphFromEdges,
+  normalizePath,
   type LinkEdge,
   type RenderedEdgeArtifact,
   type RenderedGraph,
   type SimpleEdge,
 } from "../../core/links";
+import { isSitemapEligible } from "../../core/projections";
 import { acquireGraph, loadSeoConfig, loadSeoConfigOptional } from "../load-config";
 import { jsonFlag, printJson, printText, SeoCliError } from "../output";
 import {
@@ -99,6 +101,7 @@ const analyzeDeclared = (
     readonly failures: number;
     readonly discoveryFailures: number;
     readonly sitemapTruncated: boolean;
+    readonly nonHtml: ReadonlyArray<{ readonly url: string; readonly finalUrl: string; readonly contentType: string }>;
   },
 ): Effect.Effect<DeclaredAnalysis, SeoCliError> =>
   Effect.gen(function* () {
@@ -181,6 +184,14 @@ const analyzeDeclared = (
     return yield* Effect.scoped(
       Effect.gen(function* () {
         const graph = yield* acquireGraph(config);
+        if (assertCoverage && crawlState.nonHtml.length > 0) {
+          const declaredPaths = new Set([...graph.nodes.values()].filter(isSitemapEligible).map((node) => normalizePath(new URL(node.path, crawlOrigin))));
+          const missed = crawlState.nonHtml.find((item) =>
+            declaredPaths.has(normalizePath(new URL(item.url))) || declaredPaths.has(normalizePath(new URL(item.finalUrl))));
+          if (missed !== undefined) {
+            return yield* new SeoCliError({ message: `Refusing to assert rendered coverage: declared page ${missed.url} served non-HTML content.` });
+          }
+        }
         // Only `related` edges are deliberate in-copy cross-links. Breadcrumbs are
         // nav-region anchors, redirects render no anchor, and collection membership
         // is not a rendered link — diffing them against body anchors would be noise.
@@ -325,6 +336,7 @@ const linksVerifyCommand = Command.make("verify", {
           limit: artifact.crawl.limit,
           truncated: artifact.crawl.truncated,
           failures: artifact.crawl.failures,
+          ...(artifact.crawl.nonHtml === undefined ? {} : { nonHtml: artifact.crawl.nonHtml }),
           bodyTruncated: artifact.crawl.bodyTruncated,
           truncatedPages: artifact.crawl.truncatedPages,
           ...(artifact.crawl.discoveryFailures === undefined ? {} : { discoveryFailures: artifact.crawl.discoveryFailures }),
@@ -365,6 +377,7 @@ const linksVerifyCommand = Command.make("verify", {
           limit: crawl.limit,
           truncated: crawl.truncated,
           failures: crawl.failures,
+          nonHtml: crawl.nonHtml,
           bodyTruncated: crawl.truncatedBodies.length > 0,
           truncatedPages: crawl.truncatedBodies,
           discoveryFailures: crawl.discoveryFailures,
@@ -387,6 +400,7 @@ const linksVerifyCommand = Command.make("verify", {
               bodyTruncated: crawl.truncatedBodies.length > 0,
               truncatedPages: crawl.truncatedBodies,
               failures: crawl.failures,
+              nonHtml: crawl.nonHtml,
               discoveryFailures: crawl.discoveryFailures,
               skipped: crawl.skipped,
               sitemapTruncated: crawl.sitemapTruncated,
@@ -408,6 +422,9 @@ const linksVerifyCommand = Command.make("verify", {
       if ((crawlReport.discoveryFailures?.length ?? 0) > 0 || crawlReport.sitemapTruncated === true) {
         warnings.push("Sitemap or robots discovery was incomplete; rendered coverage cannot be asserted.");
       }
+      if ((crawlReport.nonHtml?.length ?? 0) > 0) {
+        warnings.push(`${crawlReport.nonHtml!.length} link-only URL(s) served non-HTML and were skipped.`);
+      }
 
       const analysis = yield* analyzeDeclared(origin, renderedEdges, options.assertCoverage, {
         truncated: crawlReport.truncated,
@@ -415,6 +432,7 @@ const linksVerifyCommand = Command.make("verify", {
         failures: crawlReport.failures.length,
         discoveryFailures: crawlReport.discoveryFailures?.length ?? 0,
         sitemapTruncated: crawlReport.sitemapTruncated ?? false,
+        nonHtml: crawlReport.nonHtml ?? [],
       });
       warnings.push(...analysis.warnings);
       const diff =

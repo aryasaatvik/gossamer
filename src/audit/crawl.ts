@@ -36,6 +36,8 @@ export interface CrawlResult {
   readonly root: string;
   readonly pages: ReadonlyArray<RenderedPage>;
   readonly failures: ReadonlyArray<CrawlFailure>;
+  /** Successfully fetched non-HTML URLs discovered only through page anchors. */
+  readonly nonHtml: ReadonlyArray<{ readonly url: string; readonly finalUrl: string; readonly contentType: string }>;
   /** URLs whose captured body hit `maxBodyBytes`; anchors past the cutoff are missing. */
   readonly truncatedBodies: ReadonlyArray<string>;
   /** True when discovery outran `limit` and pages were left unvisited. */
@@ -67,6 +69,7 @@ interface ProbedPage {
   readonly item: QueueItem;
   readonly page: RenderedPage | null;
   readonly failure: CrawlFailure | null;
+  readonly nonHtml?: { readonly url: string; readonly finalUrl: string; readonly contentType: string };
   readonly links: ReadonlyArray<URL>;
   /** Whether the captured body was cut at `maxBodyBytes`. */
   readonly bodyTruncated: boolean;
@@ -214,6 +217,7 @@ export const crawlRenderedPages = async (
   const canonicalByPath = new Map<string, string>();
   const pages: Array<RenderedPage> = [];
   const failures: Array<CrawlFailure> = [];
+  const nonHtml: Array<{ url: string; finalUrl: string; contentType: string }> = [];
   const truncatedBodies: Array<string> = [];
   const discoveryFailures: Array<CrawlFailure> = [];
   const skipped: Array<string> = [];
@@ -292,6 +296,7 @@ export const crawlRenderedPages = async (
     if (sitemapTruncated) break;
   }
   sitemapUsed = sitemapUrls.length > 0;
+  const sitemapListed = new Set(sitemapUrls.map(pageKey));
   if (!permitted(seedUrl)) frontier = [];
 
   const probePage = async (item: QueueItem): Promise<ProbedPage> => {
@@ -316,9 +321,11 @@ export const crawlRenderedPages = async (
       };
     }
     if (probe.responseHeaders["content-type"] !== undefined && !/text\/html|application\/xhtml\+xml/i.test(probe.responseHeaders["content-type"])) {
+      const expectedHtml = item.depth === 0 || sitemapListed.has(pageKey(item.url)) || sitemapListed.has(pageKey(new URL(probe.finalUrl)));
       return {
         item, page: null,
-        failure: { url: item.url.href, error: "Response is not HTML" },
+        failure: expectedHtml ? { url: item.url.href, error: "Response is not HTML" } : null,
+        ...(expectedHtml ? {} : { nonHtml: { url: item.url.href, finalUrl: probe.finalUrl, contentType: probe.responseHeaders["content-type"] } }),
         links: [], bodyTruncated: false, canonical: null,
       };
     }
@@ -371,6 +378,7 @@ export const crawlRenderedPages = async (
     const discovered: Array<QueueItem> = [];
     for (const result of probed) {
       if (result.failure !== null) failures.push(result.failure);
+      if (result.nonHtml !== undefined) nonHtml.push(result.nonHtml);
       if (result.page === null) continue;
       const page = result.page;
       const finalKey = pageKey(new URL(page.url));
@@ -427,6 +435,7 @@ export const crawlRenderedPages = async (
     // outgoing anchors or silently erase the page from the rendered corpus.
     pages: retainedPages,
     failures,
+    nonHtml,
     truncatedBodies,
     truncated,
     discoveryFailures,

@@ -244,6 +244,27 @@ describe("pagegraph links verify — rendered-edge artifact", () => {
     expect(result.stderr).toContain("discovery was incomplete");
   }, 20_000);
 
+  it("allows a non-HTML link alternate but refuses a declared page served as non-HTML", async () => {
+    const directory = configDirectory(
+      configFor(new URL(target).origin, `coverage: [{ path: "/pricing", minInbound: 1 }],`),
+    );
+    const artifactPath = join(directory, "rendered.json");
+    const emitted = await runVerify([target, "--allow-private", "--emit-rendered", artifactPath], directory);
+    expect(emitted.status).toBe(0);
+    const artifact = JSON.parse(readFileSync(artifactPath, "utf8")) as {
+      crawl: { nonHtml: Array<{ url: string; finalUrl: string; contentType: string }> };
+    };
+    artifact.crawl.nonHtml = [{ url: `${target}auth.md`, finalUrl: `${target}auth.md`, contentType: "text/markdown" }];
+    writeFileSync(artifactPath, JSON.stringify(artifact));
+    expect((await runVerify(["--rendered", artifactPath, "--assert-coverage", "--json"], directory)).status).toBe(0);
+
+    artifact.crawl.nonHtml = [{ url: `${target}pricing`, finalUrl: `${target}pricing`, contentType: "text/markdown" }];
+    writeFileSync(artifactPath, JSON.stringify(artifact));
+    const declared = await runVerify(["--rendered", artifactPath, "--assert-coverage", "--json"], directory);
+    expect(declared.status).toBe(1);
+    expect(declared.stderr).toContain("declared page");
+  }, 20_000);
+
   it("exits 1 when a rendered coverage rule is unmet", async () => {
     // /pricing has three anchors into it — two body and one nav. Requiring 3
     // fails only because the nav anchor does not count as contextual.

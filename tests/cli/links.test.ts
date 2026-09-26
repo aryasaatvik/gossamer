@@ -121,6 +121,7 @@ describe("pagegraph links verify", () => {
         limit: 100,
         truncated: false,
         failures: [],
+        nonHtml: [],
         bodyTruncated: false,
         truncatedPages: [],
         discoveryFailures: [],

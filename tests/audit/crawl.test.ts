@@ -49,6 +49,13 @@ beforeAll(async () => {
         response.writeHead(302, { location: offOriginUrl });
         response.end();
         return;
+      case "/source-with-markdown":
+        html('<a href="/auth.md">Markdown</a><a href="/leaf">Leaf</a>');
+        return;
+      case "/auth.md":
+        response.writeHead(200, { "content-type": "text/markdown" });
+        response.end("# Authentication");
+        return;
       default:
         response.writeHead(404, { "content-type": "text/plain" });
         response.end("not found");
@@ -168,6 +175,16 @@ describe("crawlRenderedPages", () => {
     }
   });
 
+  it("records a link-only Markdown alternate without failing HTML coverage", async () => {
+    const result = await crawlRenderedPages(`${origin}/source-with-markdown`, {
+      limit: 5, timeoutMs: 5_000, maxBodyBytes: 10_000, allowPrivate: true,
+    });
+    expect(result.pages.map((page) => new URL(page.url).pathname)).toEqual(["/source-with-markdown", "/leaf"]);
+    expect(result.failures).toEqual([]);
+    expect(result.nonHtml).toEqual([{ url: `${origin}/auth.md`, finalUrl: `${origin}/auth.md`, contentType: "text/markdown" }]);
+    expect(result.truncated).toBe(false);
+  });
+
   it("enforces robots across redirects and reports an off-origin advertised sitemap", async () => {
     let site = "";
     let remoteSite = "";
@@ -183,7 +200,7 @@ describe("crawlRenderedPages", () => {
         response.end(`User-agent: Pagegraph\nDisallow: /private$\nDisallow: /wild*a*a*a*a*a*a*a*a*a*a*b\nSitemap: ${remoteSite}/map.xml\nSitemap: ${site}/sitemap.xml`);
       } else if (request.url === "/sitemap.xml") {
         response.writeHead(200, { "content-type": "application/xml" });
-        response.end(`<urlset><url><loc>${site}/numeric?a=1&#38;b=2</loc></url><url><loc>${site}/xhtml</loc></url><url><loc>${site}/bad&#x110000;</loc></url></urlset>`);
+        response.end(`<urlset><url><loc>${site}/numeric?a=1&#38;b=2</loc></url><url><loc>${site}/xhtml</loc></url><url><loc>${site}/document.md</loc></url><url><loc>${site}/bad&#x110000;</loc></url></urlset>`);
       } else if (request.url === "/") {
         response.writeHead(200, { "content-type": "text/html" });
         response.end(page('<a href="/go">Go</a>'));
@@ -199,6 +216,9 @@ describe("crawlRenderedPages", () => {
       } else if (request.url === "/xhtml") {
         response.writeHead(200, { "content-type": "application/xhtml+xml" });
         response.end(page('<a href="/numeric?a=1&amp;b=2">Numeric</a>'));
+      } else if (request.url === "/document.md") {
+        response.writeHead(200, { "content-type": "text/markdown" });
+        response.end("# Listed alternate");
       } else {
         response.writeHead(404);
         response.end();
@@ -219,6 +239,7 @@ describe("crawlRenderedPages", () => {
       });
       expect(result.pages.map((page) => new URL(page.url).pathname)).toEqual(["/", "/numeric", "/xhtml"]);
       expect(result.failures[0]?.error).toContain("robots-disallowed");
+      expect(result.failures).toContainEqual({ url: `${site}/document.md`, error: "Response is not HTML" });
       expect(result.skipped).toContain(`${site}/private`);
       expect(result.discoveryFailures).toEqual([
         { url: `${remoteSite}/map.xml`, error: "Advertised sitemap is off-origin and was not fetched" },

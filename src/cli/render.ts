@@ -245,6 +245,8 @@ export interface LinksVerifyReport {
     readonly limit: number;
     readonly truncated: boolean;
     readonly failures: ReadonlyArray<LinksCrawlFailure>;
+    /** Successfully fetched link-only URLs that served non-HTML content. */
+    readonly nonHtml?: ReadonlyArray<{ readonly url: string; readonly finalUrl: string; readonly contentType: string }>;
     /** True when at least one captured body was cut at `--max-body-bytes`. */
     readonly bodyTruncated: boolean;
     /** URLs whose captured body was cut; anchors past the cutoff are missing. */

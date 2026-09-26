@@ -426,7 +426,9 @@ declared-vs-rendered link diff. It is bounded with `--limit` and needs no
 framework or config. Discovery reads same-origin `robots.txt` and bounded
 sitemaps before following page anchors, so a sitemap-only page can appear as an
 orphan. The JSON `crawl` block records skipped URLs, discovery failures, and
-sitemap truncation:
+sitemap truncation. Link-followed non-HTML alternates are recorded in `nonHtml`
+without counting as HTML page failures; a sitemap-listed or declared page served
+as non-HTML still blocks a coverage assertion:
 
 ```bash
 pagegraph links verify https://example.com
@@ -459,6 +461,7 @@ and the provenance a gate needs to trust it:
     "bodyTruncated": false,
     "truncatedPages": [],
     "failures": [],
+    "nonHtml": [{ "url": "https://example.com/auth.md", "finalUrl": "https://example.com/auth.md", "contentType": "text/markdown" }],
     "discoveryFailures": [],
     "skipped": [],
     "sitemapTruncated": false,
