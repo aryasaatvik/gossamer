@@ -247,15 +247,13 @@ export const rankLinkSuggestions = (
           // Editorial slugs are often shortened: "welcome" can be described by
           // "email onboarding" when those words occur beside welcome on the target.
           if (destinationSegments.length === 1 || namedSection) continue;
-          const targetWords = words(passage.sentence);
-          const nearTopic = new Set<string>();
-          targetWords.forEach((term, index) => {
-            if (!namedDestination.includes(term)) return;
-            for (let offset = Math.max(0, index - 3); offset <= Math.min(targetWords.length - 1, index + 3); offset++) {
-              nearTopic.add(targetWords[offset]!);
-            }
+          const targetWords = (passage.sentence.toLowerCase().match(/[a-z][a-z0-9]*/g) ?? []);
+          const adjacentTopic = targetWords.some((term, index) => {
+            if (!namedDestination.includes(term)) return false;
+            return [[index - 2, index - 1], [index + 1, index + 2]].some(([first, second]) =>
+              anchorTerms.includes(targetWords[first] ?? "") && anchorTerms.includes(targetWords[second] ?? ""));
           });
-          if (anchorTerms.filter((term) => nearTopic.has(term)).length < 2) continue;
+          if (!adjacentTopic) continue;
         }
         const compounds = normalizeHyphens(anchor).match(/[A-Za-z0-9]+(?:-[A-Za-z0-9]+)+/g) ?? [];
         if (!compounds.every((compound) => passage.normalized.includes(compound.toLowerCase()))) continue;

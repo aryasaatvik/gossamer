@@ -152,6 +152,9 @@ describe("content-backed link suggestions", () => {
       { path: welcome.destination, sentences: [target] }], new Map(), 10).total).toBe(0);
     expect(rankLinkSuggestions([welcome], [{ path: welcome.source, sentences: ["An email onboarding sequence can introduce customers to the product."] },
       { path: welcome.destination, sentences: ["A welcome email onboarding sequence introduces new customers to the product."] }], new Map(), 10).candidates[0]?.anchor).toContain("email onboarding");
+    const onboarding = { ...welcome, destination: "/blog/onboarding" };
+    expect(rankLinkSuggestions([onboarding], [{ path: onboarding.source, sentences: ["Teams share the setup during another project."] },
+      { path: onboarding.destination, sentences: ["Teams share the setup before onboarding begins."] }], new Map(), 10).total).toBe(0);
     const unsubscribe = { ...welcome, destination: "/blog/one-click-unsubscribe-rfc-8058" };
     expect(rankLinkSuggestions([unsubscribe], [{ path: unsubscribe.source, sentences: ["Review any suppression or unsubscribe restriction before retrying delivery."] },
       { path: unsubscribe.destination, sentences: ["Unsubscribe headers let the platform handle suppression for a marketing send."] }], new Map(), 10).candidates[0]?.anchor).toContain("unsubscribe");
