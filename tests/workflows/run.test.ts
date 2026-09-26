@@ -491,4 +491,26 @@ describe("workflow runner", () => {
     expect(actionPrompt).toContain(accepted.anchor);
     expect(actionPrompt).not.toContain(rejected.anchor);
   });
+
+  it("keeps an accepted suggestion read-only in dry-run mode", async () => {
+    const { root, graph, config } = fixture();
+    const item = { from: "/docs/email", to: "/pricing", anchor: "pricing options", context: "See pricing options for teams.", relation: "plans" };
+    let continued = false;
+    const result = await runWorkflow({ config, graph, root, workflow: "improve.links", options: { ...options, dryRun: true } }, {
+      acquireHost: async () => ({
+        model: { provider: "test", id: "model" },
+        research: async () => ({ state: { summary: "One proposal", items: [item] }, sessionId: "links", transcript: {}, executor: executorEvidence }),
+        continue: async (_sessionId, prompt, workflowOptions) => {
+          continued = true;
+          expect(prompt).toContain("Do not edit files");
+          expect(workflowOptions.permissions).toEqual(expect.arrayContaining([expect.objectContaining({ action: "edit", effect: "deny" })]));
+          return { state: { summary: "Preview", files: [], outcome: "dry-run" }, sessionId: "links", transcript: {}, executor: executorEvidence };
+        },
+        close: async () => {},
+      }),
+      decide: async () => ({ ...report("workflow-links"), resolved: [{ decisionId: "workflow-links:0", schemaVersion: 1, family: "workflow-links", model: "jev-latest", threshold: 0.7, inputHash: "fixture", inputRef: "/docs/email → /pricing", verdict: "add", review: false, answers: {} }] }),
+    });
+    expect(continued).toBe(true);
+    expect(result.run.changes.files).toEqual([]);
+  });
 });
