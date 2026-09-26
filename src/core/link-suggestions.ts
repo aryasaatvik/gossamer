@@ -188,6 +188,18 @@ const anchorPhrases = (sentence: string): ReadonlyArray<string> => {
   return phrases;
 };
 
+const indexTargetPage = (page: PageContent) => {
+  const passages = page.sentences.map((sentence) => ({ sentence, normalized: sentence.toLowerCase().replace(/\s+/g, " ").trim(), terms: new Set(words(sentence)) }));
+  const byTerm = new Map<string, Array<number>>();
+  passages.forEach((passage, index) => {
+    for (const term of passage.terms) {
+      if (!byTerm.has(term)) byTerm.set(term, []);
+      byTerm.get(term)!.push(index);
+    }
+  });
+  return { passages, byTerm, terms: new Set(passages.flatMap((passage) => [...passage.terms])) };
+};
+
 /** Deterministic, content-grounded ranking; no placement is emitted without shared terms. */
 export const rankLinkSuggestions = (
   pairs: ReadonlyArray<LinkCandidatePair>,
@@ -200,31 +212,24 @@ export const rankLinkSuggestions = (
   for (const page of pages) {
     for (const term of new Set(page.sentences.flatMap(words))) frequency.set(term, (frequency.get(term) ?? 0) + 1);
   }
-  const targetIndexes = new Map(pages.map((page) => {
-    const passages = page.sentences.map((sentence) => ({ sentence, normalized: sentence.toLowerCase().replace(/\s+/g, " ").trim(), terms: new Set(words(sentence)) }));
-    const byTerm = new Map<string, Array<number>>();
-    passages.forEach((passage, index) => {
-      for (const term of passage.terms) {
-        if (!byTerm.has(term)) byTerm.set(term, []);
-        byTerm.get(term)!.push(index);
-      }
-    });
-    return [page.path, { passages, byTerm, terms: new Set(passages.flatMap((passage) => [...passage.terms])) }] as const;
-  }));
+  const targetIndexes = new Map<string, ReturnType<typeof indexTargetPage>>();
   const scored: Array<LinkSuggestion> = [];
   for (const pair of pairs) {
     const source = byPath.get(pair.source);
     const target = byPath.get(pair.destination);
-    const targetIndex = targetIndexes.get(pair.destination);
-    if (!source || !target || !targetIndex || pair.destination === "/") continue;
+    if (!source || !target || pair.destination === "/") continue;
     const destinationSegments = pair.destination.split("/").filter(Boolean);
     const destinationSlug = destinationSegments.at(-1) ?? "";
     const destinationTerms = words(destinationSlug.replace(/[-_]/g, " "));
     if (destinationSegments.length === 1 && destinationTerms.length === 0) continue;
+    let targetIndex = targetIndexes.get(pair.destination);
+    if (!targetIndex) {
+      targetIndex = indexTargetPage(target);
+      targetIndexes.set(pair.destination, targetIndex);
+    }
     const namedSection = destinationSegments.length >= 2 && ["compare", "legal"].includes(destinationSegments[0]!);
     const namedDestination = destinationTerms.filter((term) => destinationSegments.length === 1 || namedSection
-      || (term.length > 3 && target.sentences.some((sentence) => [...sentence.matchAll(/\b[A-Z][A-Za-z0-9]*\b/g)]
-        .some((match) => match[0].toLowerCase() === term))));
+      || (term.length > 3 && targetIndex.terms.has(term)));
     let best: LinkSuggestion | undefined;
     for (const sentence of source.sentences) {
       const sourceTerms = new Set(words(sentence));
@@ -238,6 +243,8 @@ export const rankLinkSuggestions = (
         const passageIndex = possible.find((index) => anchorTerms.every((term) => targetIndex.passages[index]!.terms.has(term)));
         if (passageIndex === undefined) continue;
         const passage = targetIndex.passages[passageIndex]!;
+        const compounds = anchor.match(/[A-Za-z0-9]+(?:-[A-Za-z0-9]+)+/g) ?? [];
+        if (!compounds.every((compound) => passage.normalized.includes(compound.toLowerCase()))) continue;
         if (normalizedSource === passage.normalized) continue;
         const topical = anchorTerms.length;
         const rarity = Math.round(anchorTerms.reduce((sum, term) => sum + 1 / (frequency.get(term) ?? 1), 0) * 100) / 100;

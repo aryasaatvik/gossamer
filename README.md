@@ -534,10 +534,16 @@ The page budget selects low-inbound candidate pairs first. Use repeatable
 `--target /exact/path` to put a known weak destination within the budget. Add
 `--source /exact/path` when you have a likely source and want to guarantee the
 pair is probed even on a large site; raise `--page-limit` for more pairs.
+For a site with many legal, comparison, or other low-inbound pages, use
+`--cluster blog` (or another section) to spend the same page budget on an
+editorial cluster. A zero-result broad probe means no placement passed the
+evidence rules within its selected pages; it does not mean the whole site has
+no possible links.
 
 ```bash
 pagegraph links verify https://example.com --json
 pagegraph links candidates --site https://example.com --page-limit 25 --json > /tmp/pagegraph-suggestions.json
+pagegraph links candidates --site https://example.com --cluster blog --page-limit 25 --json
 pagegraph links candidates --site https://example.com --source /blog/guide --target /blog/weak --page-limit 25 --json > /tmp/pagegraph-suggestions.json
 pagegraph improve links --suggestions /tmp/pagegraph-suggestions.json --dry-run
 pagegraph improve links --suggestions /tmp/pagegraph-suggestions.json

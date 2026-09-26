@@ -116,6 +116,9 @@ describe("content-backed link suggestions", () => {
     const target = "HMAC-SHA256 verifies webhook signatures across retries.";
     expect(rankLinkSuggestions([technical], [{ path: technical.source, sentences: [source] },
       { path: technical.destination, sentences: [target] }], new Map(), 10).candidates[0]?.anchor).toBe("HMAC-SHA256");
+    const misleading = { ...technical, source: "/docs/toolkit", destination: "/docs/source" };
+    expect(rankLinkSuggestions([misleading], [{ path: misleading.source, sentences: ["The open-source toolkit explains modules."] },
+      { path: misleading.destination, sentences: ["Open the source files to inspect modules."] }], new Map(), 10).total).toBe(0);
   });
 
   it("requires a top-level destination anchor to name its topic", () => {
@@ -136,6 +139,16 @@ describe("content-backed link suggestions", () => {
     const about = { ...api, source: "/developers", destination: "/about" };
     expect(rankLinkSuggestions([about], [{ path: about.source, sentences: ["The compiler catches a bad payload before it ships."] },
       { path: about.destination, sentences: ["A service catches webhooks and suppresses bad addresses."] }], new Map(), 10).total).toBe(0);
+  });
+
+  it("requires an editorial anchor to name an evidenced destination topic", () => {
+    const welcome = { source: "/blog/email-bounce-back", destination: "/blog/welcome", cluster: "blog", reason: "same section" };
+    const target = "A welcome email gives product teams something concrete to build and test.";
+    expect(rankLinkSuggestions([welcome], [{ path: welcome.source, sentences: ["These details give product teams something concrete to investigate."] },
+      { path: welcome.destination, sentences: [target] }], new Map(), 10).total).toBe(0);
+    const unsubscribe = { ...welcome, destination: "/blog/one-click-unsubscribe-rfc-8058" };
+    expect(rankLinkSuggestions([unsubscribe], [{ path: unsubscribe.source, sentences: ["Review any suppression or unsubscribe restriction before retrying delivery."] },
+      { path: unsubscribe.destination, sentences: ["Unsubscribe headers let the platform handle suppression for a marketing send."] }], new Map(), 10).candidates[0]?.anchor).toContain("unsubscribe");
   });
 
   it("selects a bounded explicit pair from a large declared graph", () => {

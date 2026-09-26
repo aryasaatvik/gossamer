@@ -564,6 +564,10 @@ const linksCandidatesCommand = Command.make("candidates", {
       description: "Rank verifiable sentence-and-anchor suggestions from served pages",
     },
     {
+      command: "pagegraph links candidates --site https://example.com --cluster blog --page-limit 25 --json",
+      description: "Focus a bounded probe on an editorial section when the site-wide sample is sparse",
+    },
+    {
       command: "pagegraph links candidates --site https://example.com --target /blog/weak --json",
       description: "Probe a weak target and its candidate source pages first",
     },
