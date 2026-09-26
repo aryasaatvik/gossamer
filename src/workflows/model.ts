@@ -53,6 +53,7 @@ export interface WorkflowTargetOptions {
   readonly refresh: boolean;
   readonly dryRun: boolean;
   readonly allowDirty: boolean;
+  readonly allowPrivate?: boolean | undefined;
   readonly suggestions?: string | undefined;
 }
 

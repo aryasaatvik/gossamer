@@ -149,6 +149,7 @@ const optionsFrom = (
     refresh: flags.refresh === true,
     dryRun: extra.dryRun === true,
     allowDirty: extra.allowDirty === true,
+    allowPrivate: flags.allowPrivate === true,
     suggestions: optionalString(flags.suggestions),
   };
 };

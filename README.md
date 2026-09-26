@@ -541,7 +541,10 @@ pagegraph improve links --suggestions /tmp/pagegraph-suggestions.json
 `improve links` validates the artifact against the configured origin and graph,
 then asks Jev to judge the suggested placements. Only accepted `add` or `update`
 decisions can open an edit turn; skipped and review-band links remain in the run
-artifact without authorizing an edit.
+artifact without authorizing an edit. Before an accepted edit, Pagegraph checks
+that the source sentence and target passage still occur in served copy. Regenerate
+the artifact if either page changed. For a local site, pass `--allow-private` to
+both `links candidates --site` and `improve links --suggestions`.
 
 ### Contextual-link coverage
 

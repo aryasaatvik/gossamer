@@ -7,8 +7,10 @@ import { resolve } from "node:path";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 
 import type { SeoCliConfig } from "../config";
+import { allowedByRobots, robotsRules } from "../audit/crawl";
+import { probeHttp } from "../audit/scanners/http";
 import type { SeoGraph } from "../core/graph";
-import { decodeLinksSuggestionReport } from "../core/link-suggestions";
+import { decodeLinksSuggestionReport, extractPageSentences } from "../core/link-suggestions";
 import type { DecisionBatchReport } from "../decide/record";
 import { createRunId, writeResearchCheckpoint, writeRunBundle } from "./artifact";
 import { getWorkflowSpec } from "./catalog";
@@ -41,7 +43,28 @@ export interface WorkflowDependencies {
     spec: AnyWorkflowSpec,
   ) => Promise<DecisionBatchReport>;
   readonly now?: () => Date;
+  /** Test seam for current served-copy validation before an accepted link edit. */
+  readonly readSuggestionSentences?: (origin: string, path: string, allowPrivate: boolean) => Promise<ReadonlyArray<string>>;
 }
+
+const readCurrentSuggestionSentences = async (origin: string, path: string, allowPrivate: boolean): Promise<ReadonlyArray<string>> => {
+  const options = { sameOrigin: origin, allowPrivate, timeoutMs: 15_000, maxBodyBytes: 2_000_000 };
+  const robots = await probeHttp({ kind: "robots", method: "GET", accept: "text/plain", url: new URL("/robots.txt", origin) }, { ...options, captureBody: true });
+  if ((!robots.ok && robots.status !== 404) || robots.bodyTruncated) throw new Error("Could not verify current robots policy for suggestion freshness");
+  const rules = robots.ok ? robotsRules(robots.body ?? "").rules : [];
+  const url = new URL(path, origin);
+  if (!allowedByRobots(`${url.pathname}${url.search}`, rules)) throw new Error(`Suggestion page is robots-disallowed: ${path}`);
+  const probe = await probeHttp({ kind: "page-html", method: "GET", accept: "text/html", url }, {
+    ...options, captureBody: true, allowUrl: (next) => allowedByRobots(`${next.pathname}${next.search}`, rules),
+  });
+  const contentType = probe.responseHeaders["content-type"];
+  if (!probe.ok || probe.bodyTruncated || !probe.body || !probe.finalUrl
+    || (contentType !== undefined && !/text\/html|application\/xhtml\+xml/i.test(contentType))
+    || new URL(probe.finalUrl).pathname.replace(/\/+$/, "") !== path.replace(/\/+$/, "")) {
+    throw new Error(`Could not verify current served copy for suggestion page ${path}: ${probe.error ?? "unreadable or redirected page"}`);
+  }
+  return extractPageSentences(probe.body);
+};
 
 const defaultDecide = async (
   inputs: ReadonlyArray<unknown>,
@@ -245,6 +268,21 @@ export const runWorkflow = async (
         }
       }
       const actionItems = accepted === undefined ? undefined : (state as { items: ReadonlyArray<unknown> }).items.filter((_, index) => acceptedIndexes.has(index));
+      if (actionItems !== undefined && actionItems.length > 0 && suggestionReport !== undefined) {
+        const readSentences = dependencies.readSuggestionSentences ?? readCurrentSuggestionSentences;
+        const current = new Map<string, ReadonlyArray<string>>();
+        for (const item of actionItems as ReadonlyArray<{ from: string; to: string; anchor: string; context: string }>) {
+          const candidate = suggestionReport.candidates.find((entry) => entry.source === item.from && entry.destination === item.to
+            && entry.anchor === item.anchor && entry.sentence === item.context);
+          if (!candidate) throw new Error("Accepted link is absent from the supplied suggestions");
+          for (const path of [candidate.source, candidate.destination]) {
+            if (!current.has(path)) current.set(path, await readSentences(suggestionReport.origin, path, input.options.allowPrivate === true));
+          }
+          if (!current.get(candidate.source)!.includes(candidate.sentence) || !current.get(candidate.destination)!.includes(candidate.targetSentence)) {
+            throw new Error(`Suggestion is stale; served copy changed for ${candidate.source} → ${candidate.destination}. Regenerate links candidates --site.`);
+          }
+        }
+      }
       const actionState = actionItems === undefined ? state : { ...(state as Record<string, unknown>), items: actionItems };
       const actionDecisions = accepted === undefined ? decisionReport : {
         ...decisionReport,
