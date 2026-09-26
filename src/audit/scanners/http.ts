@@ -169,7 +169,7 @@ export const extractDocumentSignals = (
   contentType: string,
   requestedUrl: URL,
 ): DocumentSignals => {
-  const isHtml = contentType.includes("text/html");
+  const isHtml = contentType.includes("text/html") || contentType.includes("application/xhtml+xml");
   const isMarkdown = contentType.includes("text/markdown");
   const looksJson =
     contentType.includes("json") || requestedUrl.pathname.endsWith(".json");
@@ -312,6 +312,9 @@ export const probeHttp = async (
       if (options.sameOrigin !== undefined && currentUrl.origin !== options.sameOrigin) {
         throw new Error(`Redirected off-origin to ${currentUrl.href}`);
       }
+      if (options.allowUrl !== undefined && !options.allowUrl(currentUrl)) {
+        throw new Error(`Redirected to robots-disallowed URL ${currentUrl.href}`);
+      }
       response = await requestPinned(currentUrl, request, options);
       headersAt = performance.now();
       const location = response.headers.location;
@@ -334,7 +337,7 @@ export const probeHttp = async (
         : "";
     const body = new TextDecoder().decode(bounded.bytes);
     const anchors =
-      options.captureAnchors === true && contentType.includes("text/html")
+      options.captureAnchors === true && (contentType.includes("text/html") || contentType.includes("application/xhtml+xml"))
         ? extractAnchors(body, currentUrl.href)
         : undefined;
     return {

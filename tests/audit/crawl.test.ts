@@ -34,13 +34,16 @@ beforeAll(async () => {
         response.end(page(`<a href="/target">Target</a>${"x".repeat(5_000)}`));
         return;
       case "/canonical-alias":
-        html('<link rel="canonical" href="/canonical-target"><a href="/canonical-target">Target</a>');
+        html('<link rel="canonical" href="/canonical-target"><a href="/canonical-target">Target</a><a href="/leaf">Leaf</a>');
         return;
       case "/canonical-unvisited":
         html('<link rel="canonical" href="/canonical-target">Alias body');
         return;
       case "/canonical-target":
-        html("Canonical body");
+        html('<a href="/canonical-target">Target</a>');
+        return;
+      case "/canonical-copy":
+        html('<link rel="canonical" href="/canonical-target"><a href="/canonical-target">Target</a>');
         return;
       case "/off-origin":
         response.writeHead(302, { location: offOriginUrl });
@@ -127,11 +130,15 @@ describe("crawlRenderedPages", () => {
     }
   });
 
-  it("dedupes a canonical alias only after fetching the canonical HTML", async () => {
+  it("retains an alias with distinct served links and dedupes identical canonical anchors", async () => {
     const options = { limit: 5, timeoutMs: 5_000, maxBodyBytes: 10_000, allowPrivate: true };
     const fetched = await crawlRenderedPages(`${origin}/canonical-alias`, options);
-    expect(fetched.pages.map((page) => new URL(page.url).pathname)).toEqual(["/canonical-target"]);
-    expect(fetched.root).toBe("/canonical-target");
+    expect(fetched.pages.map((page) => new URL(page.url).pathname)).toEqual(["/canonical-alias", "/canonical-target", "/leaf"]);
+    expect(fetched.root).toBe("/canonical-alias");
+
+    const copy = await crawlRenderedPages(`${origin}/canonical-copy`, options);
+    expect(copy.pages.map((page) => new URL(page.url).pathname)).toEqual(["/canonical-target"]);
+    expect(copy.root).toBe("/canonical-target");
 
     const unvisited = await crawlRenderedPages(`${origin}/canonical-unvisited`, options);
     expect(unvisited.pages.map((page) => new URL(page.url).pathname)).toEqual(["/canonical-unvisited"]);
@@ -158,6 +165,70 @@ describe("crawlRenderedPages", () => {
     } finally {
       await new Promise<void>((resolve) => remote.close(() => resolve()));
       offOriginUrl = "";
+    }
+  });
+
+  it("enforces robots across redirects and reports an off-origin advertised sitemap", async () => {
+    let site = "";
+    let remoteSite = "";
+    let privateFetches = 0;
+    let remoteFetches = 0;
+    const remote = createServer((_request, response) => {
+      remoteFetches += 1;
+      response.end("<urlset></urlset>");
+    });
+    const fixture = createServer((request, response) => {
+      if (request.url === "/robots.txt") {
+        response.writeHead(200, { "content-type": "text/plain" });
+        response.end(`User-agent: Pagegraph\nDisallow: /private$\nDisallow: /wild*a*a*a*a*a*a*a*a*a*a*b\nSitemap: ${remoteSite}/map.xml\nSitemap: ${site}/sitemap.xml`);
+      } else if (request.url === "/sitemap.xml") {
+        response.writeHead(200, { "content-type": "application/xml" });
+        response.end(`<urlset><url><loc>${site}/numeric?a=1&#38;b=2</loc></url><url><loc>${site}/xhtml</loc></url></urlset>`);
+      } else if (request.url === "/") {
+        response.writeHead(200, { "content-type": "text/html" });
+        response.end(page('<a href="/go">Go</a>'));
+      } else if (request.url === "/go") {
+        response.writeHead(302, { location: "/private" });
+        response.end();
+      } else if (request.url === "/private") {
+        privateFetches += 1;
+        response.end(page("Private"));
+      } else if (request.url === "/numeric?a=1&b=2") {
+        response.writeHead(200, { "content-type": "text/html" });
+        response.end(page("Numeric"));
+      } else if (request.url === "/xhtml") {
+        response.writeHead(200, { "content-type": "application/xhtml+xml" });
+        response.end(page('<a href="/numeric?a=1&amp;b=2">Numeric</a>'));
+      } else {
+        response.writeHead(404);
+        response.end();
+      }
+    });
+    await Promise.all([
+      new Promise<void>((resolve) => remote.listen(0, "127.0.0.1", resolve)),
+      new Promise<void>((resolve) => fixture.listen(0, "127.0.0.1", resolve)),
+    ]);
+    try {
+      const localAddress = fixture.address();
+      const remoteAddress = remote.address();
+      if (localAddress === null || typeof localAddress === "string" || remoteAddress === null || typeof remoteAddress === "string") throw new Error("Fixture did not bind");
+      site = `http://127.0.0.1:${localAddress.port}`;
+      remoteSite = `http://127.0.0.1:${remoteAddress.port}`;
+      const result = await crawlRenderedPages(`${site}/`, {
+        limit: 10, timeoutMs: 5_000, maxBodyBytes: 10_000, allowPrivate: true,
+      });
+      expect(result.pages.map((page) => new URL(page.url).pathname)).toEqual(["/", "/numeric", "/xhtml"]);
+      expect(result.failures[0]?.error).toContain("robots-disallowed");
+      expect(result.skipped).toContain(`${site}/private`);
+      expect(result.discoveryFailures).toEqual([{ url: `${remoteSite}/map.xml`, error: "Advertised sitemap is off-origin and was not fetched" }]);
+      expect(privateFetches).toBe(0);
+      expect(remoteFetches).toBe(0);
+      expect(result.pages.find((page) => new URL(page.url).pathname === "/xhtml")?.anchors).toHaveLength(1);
+    } finally {
+      await Promise.all([
+        new Promise<void>((resolve) => remote.close(() => resolve())),
+        new Promise<void>((resolve) => fixture.close(() => resolve())),
+      ]);
     }
   });
 });

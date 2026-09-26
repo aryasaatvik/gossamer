@@ -225,6 +225,25 @@ describe("pagegraph links verify — rendered-edge artifact", () => {
     expect(report.coverage).toMatchObject({ rules: 1, ok: true });
   }, 20_000);
 
+  it("refuses coverage when replayed discovery provenance is incomplete", async () => {
+    const directory = configDirectory(
+      configFor(new URL(target).origin, `coverage: [{ path: "/pricing", minInbound: 1 }],`),
+    );
+    const artifactPath = join(directory, "rendered.json");
+    const emitted = await runVerify([target, "--allow-private", "--emit-rendered", artifactPath], directory);
+    expect(emitted.status).toBe(0);
+    const artifact = JSON.parse(readFileSync(artifactPath, "utf8")) as {
+      crawl: { discoveryFailures: Array<{ url: string; error: string }> };
+    };
+    artifact.crawl.discoveryFailures = [{ url: `${target}sitemap.xml`, error: "malformed sitemap" }];
+    writeFileSync(artifactPath, JSON.stringify(artifact));
+
+    const result = await runVerify(["--rendered", artifactPath, "--assert-coverage", "--json"], directory);
+    expect(result.status).toBe(1);
+    expect(result.stdout).toBe("");
+    expect(result.stderr).toContain("discovery was incomplete");
+  }, 20_000);
+
   it("exits 1 when a rendered coverage rule is unmet", async () => {
     // /pricing has three anchors into it — two body and one nav. Requiring 3
     // fails only because the nav anchor does not count as contextual.

@@ -105,6 +105,8 @@ export interface ProbeOptions {
   readonly captureBody?: boolean | undefined;
   /** Refuse cross-origin redirects during a same-origin crawl. */
   readonly sameOrigin?: string | undefined;
+  /** Optional per-redirect crawl policy, checked before each network request. */
+  readonly allowUrl?: ((url: URL) => boolean) | undefined;
 }
 
 export interface DocumentSignals {
