@@ -170,6 +170,7 @@ const stop = new Set("a an as at about after again also and are but by can for f
 const words = (value: string): ReadonlyArray<string> => (value.toLowerCase().match(/[a-z][a-z0-9]{2,}/g) ?? [])
   .filter((word) => !stop.has(word));
 const clauseBreaks = new Set(["unless", "because", "although", "whereas", "whether", "until", "however", "therefore", "otherwise"]);
+const topicConnectors = new Set(["a", "an", "and", "or", "the"]);
 const normalizeHyphens = (value: string): string => value.replace(/[\u2010-\u2015\u2212\uFE58\uFE63\uFF0D]/g, "-");
 
 const anchorPhrases = (sentence: string): ReadonlyArray<string> => {
@@ -247,7 +248,8 @@ export const rankLinkSuggestions = (
           // Editorial slugs are often shortened: "welcome" can be described by
           // "email onboarding" when those words occur beside welcome on the target.
           if (destinationSegments.length === 1 || namedSection) continue;
-          const targetWords = (passage.sentence.toLowerCase().match(/[a-z][a-z0-9]*/g) ?? []);
+          const targetWords = (passage.sentence.toLowerCase().match(/[a-z][a-z0-9]*/g) ?? [])
+            .filter((term) => !topicConnectors.has(term));
           const adjacentTopic = targetWords.some((term, index) => {
             if (!namedDestination.includes(term)) return false;
             return [[index - 2, index - 1], [index + 1, index + 2]].some(([first, second]) =>
