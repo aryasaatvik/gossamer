@@ -170,9 +170,10 @@ const stop = new Set("a an as at about after again also and are but by can for f
 const words = (value: string): ReadonlyArray<string> => (value.toLowerCase().match(/[a-z][a-z0-9]{2,}/g) ?? [])
   .filter((word) => !stop.has(word));
 const clauseBreaks = new Set(["unless", "because", "although", "whereas", "whether", "until", "however", "therefore", "otherwise"]);
+const normalizeHyphens = (value: string): string => value.replace(/[\u2010-\u2015\u2212\uFE58\uFE63\uFF0D]/g, "-");
 
 const anchorPhrases = (sentence: string): ReadonlyArray<string> => {
-  const tokens = [...sentence.matchAll(/[A-Za-z][A-Za-z0-9-]*/g)].map((match) => ({ text: match[0], start: match.index, end: match.index + match[0].length }));
+  const tokens = [...sentence.matchAll(/[A-Za-z][A-Za-z0-9\u2010-\u2015\u2212\uFE58\uFE63\uFF0D-]*/g)].map((match) => ({ text: match[0], start: match.index, end: match.index + match[0].length }));
   const phrases: Array<string> = [];
   for (let start = 0; start < tokens.length; start++) {
     if (stop.has(tokens[start]!.text.toLowerCase()) || clauseBreaks.has(tokens[start]!.text.toLowerCase())) continue;
@@ -189,7 +190,7 @@ const anchorPhrases = (sentence: string): ReadonlyArray<string> => {
 };
 
 const indexTargetPage = (page: PageContent) => {
-  const passages = page.sentences.map((sentence) => ({ sentence, normalized: sentence.toLowerCase().replace(/\s+/g, " ").trim(), terms: new Set(words(sentence)) }));
+  const passages = page.sentences.map((sentence) => ({ sentence, normalized: normalizeHyphens(sentence.toLowerCase()).replace(/\s+/g, " ").trim(), terms: new Set(words(sentence)) }));
   const byTerm = new Map<string, Array<number>>();
   passages.forEach((passage, index) => {
     for (const term of passage.terms) {
@@ -235,15 +236,28 @@ export const rankLinkSuggestions = (
       const sourceTerms = new Set(words(sentence));
       const matching = [...sourceTerms].filter((term) => targetIndex.terms.has(term));
       if (matching.length < 2) continue;
-      const normalizedSource = sentence.toLowerCase().replace(/\s+/g, " ").trim();
+      const normalizedSource = normalizeHyphens(sentence.toLowerCase()).replace(/\s+/g, " ").trim();
       for (const anchor of anchorPhrases(sentence)) {
         const anchorTerms = [...new Set(words(anchor))];
-        if (namedDestination.length > 0 && !anchorTerms.some((term) => namedDestination.includes(term))) continue;
         const possible = anchorTerms.map((term) => targetIndex.byTerm.get(term) ?? []).sort((a, b) => a.length - b.length)[0] ?? [];
         const passageIndex = possible.find((index) => anchorTerms.every((term) => targetIndex.passages[index]!.terms.has(term)));
         if (passageIndex === undefined) continue;
         const passage = targetIndex.passages[passageIndex]!;
-        const compounds = anchor.match(/[A-Za-z0-9]+(?:-[A-Za-z0-9]+)+/g) ?? [];
+        if (namedDestination.length > 0 && !anchorTerms.some((term) => namedDestination.includes(term))) {
+          // Editorial slugs are often shortened: "welcome" can be described by
+          // "email onboarding" when those words occur beside welcome on the target.
+          if (destinationSegments.length === 1 || namedSection) continue;
+          const targetWords = words(passage.sentence);
+          const nearTopic = new Set<string>();
+          targetWords.forEach((term, index) => {
+            if (!namedDestination.includes(term)) return;
+            for (let offset = Math.max(0, index - 3); offset <= Math.min(targetWords.length - 1, index + 3); offset++) {
+              nearTopic.add(targetWords[offset]!);
+            }
+          });
+          if (anchorTerms.filter((term) => nearTopic.has(term)).length < 2) continue;
+        }
+        const compounds = normalizeHyphens(anchor).match(/[A-Za-z0-9]+(?:-[A-Za-z0-9]+)+/g) ?? [];
         if (!compounds.every((compound) => passage.normalized.includes(compound.toLowerCase()))) continue;
         if (normalizedSource === passage.normalized) continue;
         const topical = anchorTerms.length;
