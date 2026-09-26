@@ -126,9 +126,10 @@ const decode = (text: string): string => text
 /** Restrict placements to visible main/article copy, ignoring site chrome and scripts. */
 export const extractPageSentences = (html: string): ReadonlyArray<string> => {
   const visibleHtml = html.replace(/<(script|style|noscript|svg|nav|header|footer|template)\b[^>]*>[\s\S]*?<\/\1>/gi, " ");
-  const container = /<main\b/i.test(visibleHtml) ? "main" : "article";
-  if (!new RegExp(`<${container}\\b`, "i").test(visibleHtml)) return [];
-  const suppressedTags = new Set(["script", "style", "noscript", "svg", "nav", "header", "footer", "template", "a"]);
+  const containerHtml = visibleHtml.replace(/<(pre|code|table|dl)\b[^>]*>[\s\S]*?<\/\1>/gi, " ");
+  const container = /<main\b/i.test(containerHtml) ? "main" : "article";
+  if (!new RegExp(`<${container}\\b`, "i").test(containerHtml)) return [];
+  const suppressedTags = new Set(["script", "style", "noscript", "svg", "nav", "header", "footer", "template", "a", "pre", "code", "table", "dl", "kbd", "samp"]);
   const blockTags = new Set(["p", "li", "blockquote", "section", "div", "h1", "h2", "h3", "h4", "h5", "h6"]);
   const voidTags = new Set(["area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"]);
   const stack: Array<{ name: string; suppressed: boolean }> = [];
@@ -146,8 +147,8 @@ export const extractPageSentences = (html: string): ReadonlyArray<string> => {
     const name = tag[2]!.toLowerCase();
     if (tag[1] === "/") {
       if (name === container && inside > 0) inside--;
-      if (blockTags.has(name) || name === "a" || name === container) flush();
       const at = stack.findLastIndex((entry) => entry.name === name);
+      if (blockTags.has(name) || suppressedTags.has(name) || name === container || (at >= 0 && stack[at]!.suppressed)) flush();
       if (at >= 0) stack.splice(at);
       continue;
     }
@@ -155,18 +156,34 @@ export const extractPageSentences = (html: string): ReadonlyArray<string> => {
     const hidden = /(?:^|\s)hidden(?:\s|=|$)/i.test(attrs)
       || /\baria-hidden\s*=\s*(?:"true"|'true'|true)(?:\s|$)/i.test(attrs)
       || /\bstyle\s*=\s*(?:"[^"]*(?:display\s*:\s*none|visibility\s*:\s*hidden)[^"]*"|'[^']*(?:display\s*:\s*none|visibility\s*:\s*hidden)[^']*')/i.test(attrs);
+    const suppressed = hidden || suppressedTags.has(name) || /\brole\s*=\s*(?:"(?:table|grid)"|'(?:table|grid)'|(?:table|grid))(?:\s|$)/i.test(attrs);
     if (name === container) { flush(); inside++; }
-    if (name === "a" || blockTags.has(name)) flush();
-    if (!voidTags.has(name) && !/\/\s*>$/.test(token)) stack.push({ name, suppressed: hidden || suppressedTags.has(name) });
+    if (suppressed || blockTags.has(name)) flush();
+    if (!voidTags.has(name) && !/\/\s*>$/.test(token)) stack.push({ name, suppressed });
   }
   flush();
   return blocks.flatMap((block) => decode(block).replace(/\s+/g, " ").split(/(?<=[.!?])\s+/))
     .map((part) => part.trim()).filter((part) => part.length >= 30 && part.length <= 500);
 };
 
-const stop = new Set("about after again also and are but can for from have into more most our over that the their them there these this those through with your what when where which while will would".split(" "));
+const stop = new Set("a an as at about after again also and are but by can for from have in into is it more most of on or our over that the their them there these this those through to was we were with your you what when where which while will would".split(" "));
 const words = (value: string): ReadonlyArray<string> => (value.toLowerCase().match(/[a-z][a-z0-9]{2,}/g) ?? [])
   .filter((word) => !stop.has(word));
+
+const anchorPhrases = (sentence: string): ReadonlyArray<string> => {
+  const tokens = [...sentence.matchAll(/[A-Za-z][A-Za-z0-9-]*/g)].map((match) => ({ text: match[0], start: match.index, end: match.index + match[0].length }));
+  const phrases: Array<string> = [];
+  for (let start = 0; start < tokens.length; start++) {
+    if (stop.has(tokens[start]!.text.toLowerCase())) continue;
+    for (let end = start + 1; end < Math.min(tokens.length, start + 5); end++) {
+      if (!/^\s+$/.test(sentence.slice(tokens[end - 1]!.end, tokens[end]!.start))) break;
+      if (stop.has(tokens[end]!.text.toLowerCase())) continue;
+      const phrase = sentence.slice(tokens[start]!.start, tokens[end]!.end);
+      if (new Set(words(phrase)).size >= 2) phrases.push(phrase);
+    }
+  }
+  return phrases;
+};
 
 /** Deterministic, content-grounded ranking; no placement is emitted without shared terms. */
 export const rankLinkSuggestions = (
@@ -185,27 +202,36 @@ export const rankLinkSuggestions = (
     const source = byPath.get(pair.source);
     const target = byPath.get(pair.destination);
     if (!source || !target) continue;
-    const targetTerms = new Set(target.sentences.flatMap(words));
+    const targetPassages = target.sentences.map((sentence) => ({ sentence, terms: new Set(words(sentence)) }));
+    const targetByTerm = new Map<string, Array<number>>();
+    targetPassages.forEach((passage, index) => {
+      for (const term of passage.terms) {
+        if (!targetByTerm.has(term)) targetByTerm.set(term, []);
+        targetByTerm.get(term)!.push(index);
+      }
+    });
+    const targetTerms = new Set(targetPassages.flatMap((passage) => [...passage.terms]));
     let best: LinkSuggestion | undefined;
     for (const sentence of source.sentences) {
       const matching = [...new Set(words(sentence))].filter((term) => targetTerms.has(term));
       if (matching.length < 2) continue;
-      const anchor = sentence.match(/\b(?:[A-Za-z][\w-]*\s+){0,3}[A-Za-z][\w-]*\b/g)
-        ?.filter((phrase) => words(phrase).filter((term) => targetTerms.has(term)).length >= 2)
-        .sort((a, b) => b.length - a.length || a.localeCompare(b))[0];
-      if (!anchor || !sentence.includes(anchor)) continue;
-      const anchorTerms = new Set(words(anchor));
-      const targetSentence = target.sentences.find((candidate) => words(candidate).filter((term) => anchorTerms.has(term)).length >= 2);
-      if (!targetSentence) continue;
-      const topical = matching.length;
-      const rarity = Math.round(matching.reduce((sum, term) => sum + 1 / (frequency.get(term) ?? 1), 0) * 100) / 100;
-      const inboundNeed = Math.round(100 / (1 + (inbound.get(pair.destination) ?? 0))) / 100;
-      const graph = pair.cluster.startsWith("kind:") ? 0.5 : 1;
-      const scores = { topical, rarity, inboundNeed, graph };
-      const score = Math.round((topical + rarity + inboundNeed + graph) * 100) / 100;
-      const item: LinkSuggestion = { ...pair, sentence, anchor, targetSentence, score, scores,
-        reason: `${pair.reason}; ${matching.join(", ")} connect the served passages` };
-      if (!best || item.score > best.score || (item.score === best.score && item.sentence < best.sentence)) best = item;
+      for (const anchor of anchorPhrases(sentence)) {
+        const anchorTerms = [...new Set(words(anchor))];
+        const possible = anchorTerms.map((term) => targetByTerm.get(term) ?? []).sort((a, b) => a.length - b.length)[0] ?? [];
+        const passageIndex = possible.find((index) => anchorTerms.every((term) => targetPassages[index]!.terms.has(term)));
+        if (passageIndex === undefined) continue;
+        const passage = targetPassages[passageIndex]!;
+        const topical = anchorTerms.length;
+        const rarity = Math.round(anchorTerms.reduce((sum, term) => sum + 1 / (frequency.get(term) ?? 1), 0) * 100) / 100;
+        const inboundNeed = Math.round(100 / (1 + (inbound.get(pair.destination) ?? 0))) / 100;
+        const graph = pair.cluster.startsWith("kind:") ? 0.5 : 1;
+        const scores = { topical, rarity, inboundNeed, graph };
+        const score = Math.round((topical + rarity + inboundNeed + graph) * 100) / 100;
+        const item: LinkSuggestion = { ...pair, sentence, anchor, targetSentence: passage.sentence, score, scores,
+          reason: `${pair.reason}; ${anchorTerms.join(", ")} connect the served passages` };
+        if (!best || item.score > best.score || (item.score === best.score && (item.anchor.length < best.anchor.length
+          || (item.anchor.length === best.anchor.length && (item.sentence < best.sentence || (item.sentence === best.sentence && item.anchor < best.anchor)))))) best = item;
+      }
     }
     if (best) scored.push(best);
   }

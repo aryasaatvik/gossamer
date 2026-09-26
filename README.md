@@ -524,6 +524,9 @@ For content-backed placements, opt in to a bounded same-origin probe. The config
 `origin` must match `--site`. Each schema-version-2 result carries a sentence
 from served main content, an exact anchor phrase inside it, a target sentence,
 and score components. Unreadable and over-limit pages are reported as skipped.
+Code samples and tabular comparisons are excluded. An anchor is proposed only
+when its distinct content words occur together in a target sentence, so review
+the placement and its context before editing.
 The pair-only command above remains offline and emits schema version 1.
 The page budget selects low-inbound candidate pairs first. Use repeatable
 `--target /exact/path` to put a known weak destination within the budget. Add

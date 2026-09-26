@@ -15,7 +15,7 @@ describe("content-backed link suggestions", () => {
     expect(first.candidates).toHaveLength(1);
     const suggestion = first.candidates[0]!;
     expect(suggestion.sentence).toBe(sentence);
-    expect(sentence).toContain(suggestion.anchor);
+    expect(suggestion.anchor).toBe("delivery retries and message tracking");
     expect(suggestion.targetSentence).toBe(targetSentence);
     expect(suggestion.scores.inboundNeed).toBe(1);
     expect(rankLinkSuggestions([pair], pages, new Map([[pair.destination, 3]]), 10).candidates[0]!.score).toBeLessThan(suggestion.score);
@@ -51,6 +51,26 @@ describe("content-backed link suggestions", () => {
   it("ignores a main-tag example inside script and reads the visible article", () => {
     const copy = "This article explains delivery retries and message tracking for transactional email teams.";
     expect(extractPageSentences(`<script>const example = "<main>fake";</script><article><p>${copy}</p></article>`)).toEqual([copy]);
+  });
+
+  it("excludes code and both table forms from editorial sentences", () => {
+    const copy = "Delivery retries and message tracking help teams diagnose failed messages.";
+    const html = `<main><p>${copy}</p><pre><code>subject: "Your order shipped"; delivery retries and message tracking</code></pre>
+      <table><tr><th>Capability</th><td>Samva</td><td>Delivery events signed with HMAC-SHA256.</td></tr></table>
+      <dl><div><dt>Webhooks</dt><dd><p>Delivery events signed with HMAC-SHA256.</p></dd></div></dl>
+      <div role="table"><div role="row">Delivery events signed with HMAC-SHA256.</div></div></main>`;
+    expect(extractPageSentences(html)).toEqual([copy]);
+    expect(extractPageSentences(`<main><p>Our delivery retries <code>send()</code> and message tracking help teams.</p></main>`).join(" "))
+      .not.toContain("Our delivery retries and message tracking");
+  });
+
+  it("requires two distinct anchor terms together in one target passage", () => {
+    const source = "The applicable account controls can be used after the service ends.";
+    const target = "Your account lets you review account activity for the service.";
+    expect(rankLinkSuggestions([pair], [{ path: pair.source, sentences: [source] },
+      { path: pair.destination, sentences: [target] }], new Map(), 10).total).toBe(0);
+    expect(rankLinkSuggestions([pair], [{ path: pair.source, sentences: ["Delivery retries help teams. Message tracking shows results."] },
+      { path: pair.destination, sentences: ["Delivery teams can retry failed sends.", "Operators track message history."] }], new Map(), 10).total).toBe(0);
   });
 
   it("selects a bounded explicit pair from a large declared graph", () => {
