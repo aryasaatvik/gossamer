@@ -11,7 +11,6 @@ import { probeHttp } from "../../audit/scanners/http";
 import { checkRenderedCoverage, type CoverageRule, type Violation } from "../../core/checks";
 import { decodeRenderedEdges, generateLinkCandidates } from "../../core/link-candidates";
 import { extractPageSentences, rankLinkSuggestions, selectSuggestionPages, type LinksSuggestionReport } from "../../core/link-suggestions";
-import { isSitemapEligible } from "../../core/projections";
 import {
   buildRenderedGraph,
   decodeRenderedEdgeArtifact,
