@@ -154,6 +154,8 @@ describe("content-backed link suggestions", () => {
       { path: welcome.destination, sentences: ["A welcome email onboarding sequence introduces new customers to the product."] }], new Map(), 10).candidates[0]?.anchor).toContain("email onboarding");
     expect(rankLinkSuggestions([welcome], [{ path: welcome.source, sentences: ["Our email onboarding guides help new customers get started."] },
       { path: welcome.destination, sentences: ["Email onboarding and welcome flows help new customers get started."] }], new Map(), 10).candidates[0]?.anchor).toContain("email onboarding");
+    expect(rankLinkSuggestions([welcome], [{ path: welcome.source, sentences: ["Email onboarding helps teams configure accounts."] },
+      { path: welcome.destination, sentences: ["Email onboarding or welcome messages serve different audiences."] }], new Map(), 10).total).toBe(0);
     const onboarding = { ...welcome, destination: "/blog/onboarding" };
     expect(rankLinkSuggestions([onboarding], [{ path: onboarding.source, sentences: ["Teams share the setup during another project."] },
       { path: onboarding.destination, sentences: ["Teams share the setup before onboarding begins."] }], new Map(), 10).total).toBe(0);

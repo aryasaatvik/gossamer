@@ -170,7 +170,7 @@ const stop = new Set("a an as at about after again also and are but by can for f
 const words = (value: string): ReadonlyArray<string> => (value.toLowerCase().match(/[a-z][a-z0-9]{2,}/g) ?? [])
   .filter((word) => !stop.has(word));
 const clauseBreaks = new Set(["unless", "because", "although", "whereas", "whether", "until", "however", "therefore", "otherwise"]);
-const topicConnectors = new Set(["a", "an", "and", "or", "the"]);
+const topicConnectors = new Set(["a", "an", "and", "the"]);
 const normalizeHyphens = (value: string): string => value.replace(/[\u2010-\u2015\u2212\uFE58\uFE63\uFF0D]/g, "-");
 
 const anchorPhrases = (sentence: string): ReadonlyArray<string> => {
