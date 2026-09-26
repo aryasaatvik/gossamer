@@ -43,6 +43,17 @@ OpenCode SDK and its private Effect runtime only when invoked. `vite` stays a pe
 load your app through Vite at runtime — and `lighthouse` is only needed by `pagegraph audit`.
 Importing `pagegraph/audit` programmatically still needs `effect`.
 
+### Agent skill
+
+The Pagegraph CLI serves its bundled TanStack Start integration skill:
+
+```bash
+pagegraph skills list
+pagegraph skills get core
+```
+
+The skill is maintained at [skill-data/core/SKILL.md](skill-data/core/SKILL.md) and compiled into the CLI, so the instructions match the installed Pagegraph version. `skills get core` prints Markdown to stdout; `--json` returns a structured payload.
+
 ## Quick start
 
 **1. Bind your site identity once.** Route files never see an origin or a brand name.

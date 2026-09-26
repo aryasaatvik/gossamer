@@ -249,6 +249,16 @@ try {
   if (!bundledBin.includes("pagegraph <subcommand>")) {
     throw new Error("Packed pagegraph bin did not run standalone (Effect must be bundled)");
   }
+  if (included.has("skill-data/core/SKILL.md")) {
+    throw new Error("Skill source must be embedded in the CLI, not shipped as a separate runtime file");
+  }
+  const packedSkill = await runSuccessfully(
+    [executable, "skills", "get", "core"],
+    installDirectory,
+  );
+  if (!packedSkill.startsWith("---\nname: core\n") || !packedSkill.includes("# Pagegraph and TanStack Start")) {
+    throw new Error("Packed Pagegraph CLI did not serve its embedded integration skill");
+  }
 
   await runSuccessfully(
     [

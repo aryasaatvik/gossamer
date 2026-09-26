@@ -13,6 +13,7 @@ import { planCommandGroup } from "./commands/plan";
 import { researchCommandGroup } from "./commands/research";
 import { robotsCommand } from "./commands/robots";
 import { sitemapCommand } from "./commands/sitemap";
+import { skillsCommand } from "./commands/skills";
 
 /**
  * Root `pagegraph` command. Every subcommand reads the same SEO graph that render
@@ -34,6 +35,7 @@ export const cli = Command.make("pagegraph").pipe(
       description: "Fail (exit 1) on any structural SEO violation",
     },
     { command: "pagegraph graph", description: "Print the SEO graph as a tree" },
+    { command: "pagegraph skills get core", description: "Read bundled agent guidance" },
     { command: "pagegraph sitemap", description: "Render sitemap.xml" },
     {
       command: "pagegraph research keywords --query \"transactional email api\" --market us",
@@ -53,6 +55,7 @@ export const cli = Command.make("pagegraph").pipe(
     researchCommandGroup,
     checkCommand,
     sitemapCommand,
+    skillsCommand,
     robotsCommand,
   ]),
 );
