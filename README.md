@@ -25,6 +25,16 @@ bun add pagegraph
 bun add -D lighthouse   # only for `pagegraph audit` performance evidence
 ```
 
+### Agent skill
+
+The [Pagegraph skill](skills/pagegraph/SKILL.md) lives in this repository and covers its TanStack Start integration. Install it in a coding agent with:
+
+```bash
+npx skills add aryasaatvik/pagegraph
+```
+
+The skill is included in the npm package and maintained alongside Pagegraph's route declarations, rendered head helpers, Vite coverage gate, graph projections, and CLI checks.
+
 | Entry                        | Exports                                                                                        | Peers                                       |
 | ---------------------------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------- |
 | `pagegraph`        | `buildSeoGraph`, `renderSitemap`, `renderRobots`, `contentSignal`, `checkGraph`, `checkRenderedCoverage`, `decodeRenderedEdgeArtifact`, `inspectHtml` | —                                           |
