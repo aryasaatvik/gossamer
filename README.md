@@ -526,7 +526,8 @@ from served main content, an exact anchor phrase inside it, a target sentence,
 and score components. Unreadable and over-limit pages are reported as skipped.
 Code samples and tabular comparisons are excluded. An anchor is proposed only
 when its distinct content words occur together in a target sentence, so review
-the placement and its context before editing.
+the placement and its context before editing. Repeated passages and clause
+fragments are excluded; named destinations require a destination-specific anchor.
 The pair-only command above remains offline and emits schema version 1.
 The page budget selects low-inbound candidate pairs first. Use repeatable
 `--target /exact/path` to put a known weak destination within the budget. Add

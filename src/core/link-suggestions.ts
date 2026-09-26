@@ -163,20 +163,22 @@ export const extractPageSentences = (html: string): ReadonlyArray<string> => {
   }
   flush();
   return blocks.flatMap((block) => decode(block).replace(/\s+/g, " ").split(/(?<=[.!?])\s+/))
-    .map((part) => part.trim()).filter((part) => part.length >= 30 && part.length <= 500);
+    .map((part) => part.trim()).filter((part) => part.length >= 30 && part.length <= 500 && !/;\s*(?:or|and)?$/i.test(part));
 };
 
-const stop = new Set("a an as at about after again also and are but by can for from have in into is it more most of on or our over that the their them there these this those through to was we were with your you what when where which while will would".split(" "));
+const stop = new Set("a an as at about after again also and are but by can for from had has have in into is it more most of on or our over that the their them there these this those through to was we were with your you what when where which while will would".split(" "));
 const words = (value: string): ReadonlyArray<string> => (value.toLowerCase().match(/[a-z][a-z0-9]{2,}/g) ?? [])
   .filter((word) => !stop.has(word));
+const clauseBreaks = new Set(["unless", "because", "although", "whereas", "whether", "until", "however", "therefore", "otherwise"]);
 
 const anchorPhrases = (sentence: string): ReadonlyArray<string> => {
   const tokens = [...sentence.matchAll(/[A-Za-z][A-Za-z0-9-]*/g)].map((match) => ({ text: match[0], start: match.index, end: match.index + match[0].length }));
   const phrases: Array<string> = [];
   for (let start = 0; start < tokens.length; start++) {
-    if (stop.has(tokens[start]!.text.toLowerCase())) continue;
+    if (stop.has(tokens[start]!.text.toLowerCase()) || clauseBreaks.has(tokens[start]!.text.toLowerCase())) continue;
     for (let end = start + 1; end < Math.min(tokens.length, start + 5); end++) {
       if (!/^\s+$/.test(sentence.slice(tokens[end - 1]!.end, tokens[end]!.start))) break;
+      if (clauseBreaks.has(tokens[end]!.text.toLowerCase())) break;
       if (stop.has(tokens[end]!.text.toLowerCase())) continue;
       const phrase = sentence.slice(tokens[start]!.start, tokens[end]!.end);
       if (new Set(words(phrase)).size >= 2) phrases.push(phrase);
@@ -202,6 +204,10 @@ export const rankLinkSuggestions = (
     const source = byPath.get(pair.source);
     const target = byPath.get(pair.destination);
     if (!source || !target) continue;
+    const destinationSlug = pair.destination.split("/").filter(Boolean).at(-1) ?? "";
+    const destinationTerms = words(destinationSlug.replace(/[-_]/g, " "));
+    const namedDestination = destinationTerms.filter((term) => term.length <= 3
+      || target.sentences.some((sentence) => new RegExp(`\\b${term[0]!.toUpperCase()}${term.slice(1)}\\b`).test(sentence)));
     const targetPassages = target.sentences.map((sentence) => ({ sentence, terms: new Set(words(sentence)) }));
     const targetByTerm = new Map<string, Array<number>>();
     targetPassages.forEach((passage, index) => {
@@ -217,10 +223,14 @@ export const rankLinkSuggestions = (
       if (matching.length < 2) continue;
       for (const anchor of anchorPhrases(sentence)) {
         const anchorTerms = [...new Set(words(anchor))];
+        if (namedDestination.length > 0 && !anchorTerms.some((term) => namedDestination.includes(term))) continue;
         const possible = anchorTerms.map((term) => targetByTerm.get(term) ?? []).sort((a, b) => a.length - b.length)[0] ?? [];
         const passageIndex = possible.find((index) => anchorTerms.every((term) => targetPassages[index]!.terms.has(term)));
         if (passageIndex === undefined) continue;
         const passage = targetPassages[passageIndex]!;
+        const sourceTerms = new Set(words(sentence));
+        const overlap = [...sourceTerms].filter((term) => passage.terms.has(term)).length;
+        if (overlap >= 6 && overlap / Math.min(sourceTerms.size, passage.terms.size) >= 0.7) continue;
         const topical = anchorTerms.length;
         const rarity = Math.round(anchorTerms.reduce((sum, term) => sum + 1 / (frequency.get(term) ?? 1), 0) * 100) / 100;
         const inboundNeed = Math.round(100 / (1 + (inbound.get(pair.destination) ?? 0))) / 100;

@@ -73,6 +73,31 @@ describe("content-backed link suggestions", () => {
       { path: pair.destination, sentences: ["Delivery teams can retry failed sends.", "Operators track message history."] }], new Map(), 10).total).toBe(0);
   });
 
+  it("rejects repeated copy and anchors that do not describe a named destination", () => {
+    const repeated = "Samva keeps per-message delivery timelines in the dashboard on every plan.";
+    const comparison = { source: "/compare/sendgrid", destination: "/compare/mailgun", cluster: "compare", reason: "same section" };
+    expect(rankLinkSuggestions([comparison], [{ path: comparison.source, sentences: [repeated] },
+      { path: comparison.destination, sentences: [repeated] }], new Map(), 10).total).toBe(0);
+
+    const generic = "Teams send from many languages with official libraries.";
+    const named = { ...comparison, destination: "/compare/postmark" };
+    const target = ["Postmark separates transactional and broadcast message streams.", generic];
+    expect(rankLinkSuggestions([named], [{ path: named.source, sentences: [generic] },
+      { path: named.destination, sentences: target }], new Map(), 10).total).toBe(0);
+    const specific = "Postmark transactional streams keep broadcasts separate for teams.";
+    expect(rankLinkSuggestions([named], [{ path: named.source, sentences: [specific] },
+      { path: named.destination, sentences: target }], new Map(), 10).candidates[0]?.anchor).toContain("Postmark");
+  });
+
+  it("does not use legal clause fragments or unfinished list items", () => {
+    const legal = "Customer will not submit payment-card data unless Arya Labs has separately approved that processing in writing.";
+    const target = "Do not submit payment-card data unless Arya Labs has approved that use in a separate written agreement.";
+    const policy = { source: "/legal/privacy", destination: "/legal/dpa", cluster: "legal", reason: "same section" };
+    expect(rankLinkSuggestions([policy], [{ path: policy.source, sentences: [legal] },
+      { path: policy.destination, sentences: [target] }], new Map(), 10).total).toBe(0);
+    expect(extractPageSentences("<main><li>use the Services for protected health information; or</li></main>")).toEqual([]);
+  });
+
   it("selects a bounded explicit pair from a large declared graph", () => {
     const paths = [...Array.from({ length: 2000 }, (_, index) => `/blog/a${index}`), "/blog/guide", "/blog/retries"];
     const node = (path: string) => ({ path, kind: "article", source: "blog" as const,
