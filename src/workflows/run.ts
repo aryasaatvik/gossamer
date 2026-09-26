@@ -228,14 +228,31 @@ export const runWorkflow = async (
       const accepted = spec.id === "improve.links"
         ? decisionReport.resolved.filter((record) => record.verdict === "add" || record.verdict === "update")
         : undefined;
-      const acceptedRefs = new Set(accepted?.map((record) => record.inputRef));
-      const actionState = accepted === undefined ? state : {
-        ...(state as Record<string, unknown>),
-        items: (state as { items: ReadonlyArray<{ from: string; to: string }> }).items.filter((item) => acceptedRefs.has(`${item.from} → ${item.to}`)),
+      const acceptedIndexes = new Set<number>();
+      if (accepted !== undefined) {
+        for (const record of accepted) {
+          const match = /^workflow-links:(\d+)$/.exec(record.decisionId);
+          const index = match === null ? -1 : Number(match[1]);
+          const item = decisionInputs[index] as { from?: string; to?: string } | undefined;
+          if (!item || record.inputRef !== `${item.from} → ${item.to}`) {
+            throw new Error(`Decision does not match a researched link: ${record.decisionId}`);
+          }
+          acceptedIndexes.add(index);
+        }
+      }
+      const actionItems = accepted === undefined ? undefined : (state as { items: ReadonlyArray<unknown> }).items.filter((_, index) => acceptedIndexes.has(index));
+      const actionState = actionItems === undefined ? state : { ...(state as Record<string, unknown>), items: actionItems };
+      const actionDecisions = accepted === undefined ? decisionReport : {
+        ...decisionReport,
+        resolved: accepted,
+        review: [],
+        counts: { inputs: accepted.length, resolved: accepted.length, review: 0 },
+        verdicts: { add: accepted.filter((record) => record.verdict === "add").length,
+          update: accepted.filter((record) => record.verdict === "update").length },
       };
-      const mayAct = spec.mutatesFiles && (accepted === undefined || accepted.length > 0);
+      const mayAct = spec.mutatesFiles && (actionItems === undefined || actionItems.length > 0);
       const acted = mayAct
-        ? await host.continue(researched.sessionId, actionPrompt(spec, actionState, decisionReport, mutation), {
+        ? await host.continue(researched.sessionId, actionPrompt(spec, actionState, actionDecisions, mutation), {
             skills: spec.skills,
             permissions: actionPermissions,
           })

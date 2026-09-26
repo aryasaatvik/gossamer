@@ -17,6 +17,10 @@ vi.mock("../../src/workflows/prompts/research.md", async () => {
   const { readFile } = await import("node:fs/promises");
   return { default: await readFile(new URL("../../src/workflows/prompts/research.md", import.meta.url), "utf8") };
 });
+vi.mock("../../src/workflows/prompts/action.md", async () => {
+  const { readFile } = await import("node:fs/promises");
+  return { default: await readFile(new URL("../../src/workflows/prompts/action.md", import.meta.url), "utf8") };
+});
 
 const directories: Array<string> = [];
 const git = (root: string, ...args: ReadonlyArray<string>): void => {
@@ -467,5 +471,24 @@ describe("workflow runner", () => {
       acquireHost: async () => { acquired = true; throw new Error("host acquired"); },
     })).rejects.toThrow("Expected schema-version-2 suggestions");
     expect(acquired).toBe(false);
+  });
+
+  it("passes only the accepted item when links share the same source and target", async () => {
+    const { root, graph, config } = fixture();
+    const accepted = { from: "/docs/email", to: "/pricing", anchor: "pricing options", context: "See pricing options for teams.", relation: "plans" };
+    const rejected = { ...accepted, anchor: "cheap offers", context: "Find cheap offers today." };
+    let actionPrompt = "";
+    await runWorkflow({ config, graph, root, workflow: "improve.links", options }, {
+      acquireHost: async () => ({
+        model: { provider: "test", id: "model" },
+        research: async () => ({ state: { summary: "Two proposals", items: [accepted, rejected] }, sessionId: "links", transcript: {}, executor: executorEvidence }),
+        continue: async (_sessionId, prompt) => { actionPrompt = prompt; return { state: { summary: "One edit", files: [], outcome: "applied" }, sessionId: "links", transcript: {}, executor: executorEvidence }; },
+        close: async () => {},
+      }),
+      decide: async () => ({ ...report("workflow-links"), resolved: [{ decisionId: "workflow-links:0", schemaVersion: 1, family: "workflow-links", model: "jev-latest", threshold: 0.7, inputHash: "fixture", inputRef: "/docs/email → /pricing", verdict: "add", review: false, answers: {} }],
+        review: [{ decisionId: "workflow-links:1", schemaVersion: 1, family: "workflow-links", model: "jev-latest", threshold: 0.7, inputHash: "fixture", inputRef: "/docs/email → /pricing", verdict: "review", review: true, answers: {} }] }),
+    });
+    expect(actionPrompt).toContain(accepted.anchor);
+    expect(actionPrompt).not.toContain(rejected.anchor);
   });
 });
