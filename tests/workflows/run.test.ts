@@ -417,7 +417,9 @@ describe("workflow runner", () => {
           },
           close: async () => {},
         }),
-        decide: async () => report(testCase.family),
+        decide: async () => testCase.workflow === "improve.links"
+          ? { ...report(testCase.family), resolved: [{ decisionId: "workflow-links:0", schemaVersion: 1, family: "workflow-links", model: "jev-latest", threshold: 0.7, inputHash: "fixture", inputRef: "/docs/email → /pricing", verdict: "add", review: false, answers: {} }] }
+          : report(testCase.family),
       },
     );
 
@@ -429,5 +431,41 @@ describe("workflow runner", () => {
       outcome: "applied",
     });
     expect(readFileSync(join(root, testCase.file), "utf8")).toBe(testCase.after);
+  });
+
+  it.each(["skip", "review"])("never opens an edit turn for %s link suggestions", async (verdict) => {
+    const { root, graph, config } = fixture();
+    graph.nodes.set("/docs/email", { path: "/docs/email", kind: "page", source: "route", policy: { kind: "page", sitemap: { priority: 0.5, changeFrequency: "monthly" } } });
+    const suggestion = { source: "/docs/email", destination: "/pricing", cluster: "kind:page", reason: "same kind; pricing options are relevant", sentence: "See the pricing options for transactional email teams.", anchor: "pricing options", targetSentence: "Pricing options include usage based plans for teams.", score: 4, scores: { topical: 2, rarity: 1, inboundNeed: 1, graph: 0.5 } };
+    const path = join(root, "suggestions.json");
+    writeFileSync(path, JSON.stringify({ kind: "links-candidates", schemaVersion: 2, origin: config.origin, limit: 1, pageLimit: 2, total: 1, truncated: false, skipped: [], candidates: [suggestion] }));
+    git(root, "add", "suggestions.json"); git(root, "commit", "-m", "add suggestions");
+    const state = { summary: "One candidate", items: [{ from: suggestion.source, to: suggestion.destination, anchor: suggestion.anchor, context: suggestion.sentence, relation: "pricing" }] };
+    let continued = false;
+    const result = await runWorkflow({ config, graph, root, workflow: "improve.links", options: { ...options, suggestions: path } }, {
+      acquireHost: async () => ({
+        model: { provider: "test", id: "model" },
+        research: async (prompt) => { expect(prompt).toContain(suggestion.sentence); return { state, sessionId: "links", transcript: {}, executor: executorEvidence }; },
+        continue: async () => { continued = true; throw new Error("edit turn opened"); },
+        close: async () => {},
+      }),
+      decide: async () => ({ ...report("workflow-links"), resolved: verdict === "skip" ? [{ decisionId: "workflow-links:0", schemaVersion: 1, family: "workflow-links", model: "jev-latest", threshold: 0.7, inputHash: "fixture", inputRef: "/docs/email → /pricing", verdict, review: false, answers: {} }] : [], review: verdict === "review" ? [{ decisionId: "workflow-links:0", schemaVersion: 1, family: "workflow-links", model: "jev-latest", threshold: 0.7, inputHash: "fixture", inputRef: "/docs/email → /pricing", verdict, review: true, answers: {} }] : [] }),
+    });
+    expect(continued).toBe(false);
+    expect(result.run.result).toMatchObject({ outcome: "no-change" });
+    expect(result.run.evidence.suggestions?.candidates[0]).toMatchObject({ sentence: suggestion.sentence, anchor: suggestion.anchor });
+    expect(result.run.changes.files).toEqual([]);
+  });
+
+  it("rejects a wrong-origin suggestion before acquiring a host", async () => {
+    const { root, graph, config } = fixture();
+    const path = join(root, "wrong.json");
+    writeFileSync(path, JSON.stringify({ kind: "links-candidates", schemaVersion: 2, origin: "https://other.example", candidates: [] }));
+    git(root, "add", "wrong.json"); git(root, "commit", "-m", "add wrong suggestions");
+    let acquired = false;
+    await expect(runWorkflow({ config, graph, root, workflow: "improve.links", options: { ...options, suggestions: path } }, {
+      acquireHost: async () => { acquired = true; throw new Error("host acquired"); },
+    })).rejects.toThrow("Expected schema-version-2 suggestions");
+    expect(acquired).toBe(false);
   });
 });

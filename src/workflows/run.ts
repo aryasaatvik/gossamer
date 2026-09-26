@@ -2,10 +2,13 @@ import { TypeSafeClient, TypeSafeDecisionModel } from "@effect/ai-typesafe";
 import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 
 import type { SeoCliConfig } from "../config";
 import type { SeoGraph } from "../core/graph";
+import { decodeLinksSuggestionReport } from "../core/link-suggestions";
 import type { DecisionBatchReport } from "../decide/record";
 import { createRunId, writeResearchCheckpoint, writeRunBundle } from "./artifact";
 import { getWorkflowSpec } from "./catalog";
@@ -143,6 +146,17 @@ export const runWorkflow = async (
     spec.id,
     workflows.context,
   );
+  const suggestionReport = input.options.suggestions === undefined ? undefined : (() => {
+    if (spec.id !== "improve.links") throw new Error("--suggestions is only valid for improve links");
+    const report = decodeLinksSuggestionReport(JSON.parse(readFileSync(resolve(input.root, input.options.suggestions), "utf8")), new URL(input.config.origin).origin);
+    for (const candidate of report.candidates) {
+      if (!input.graph.nodes.has(candidate.source) || !input.graph.nodes.has(candidate.destination)) {
+        throw new Error(`Suggestion references a path absent from seo.config.ts: ${candidate.source} → ${candidate.destination}`);
+      }
+    }
+    return report;
+  })();
+  const suppliedEvidence = suggestionReport === undefined ? evidence : { ...evidence, suggestions: suggestionReport };
   const acquire = dependencies.acquireHost ?? acquireWorkflowHost;
   const host: WorkflowHost = await acquire({
     root: input.root,
@@ -155,7 +169,7 @@ export const runWorkflow = async (
       spec.mutatesFiles && !input.options.dryRun
         ? mutation.sessionPermissions
         : researchPermissions;
-    const researched = await host.research(researchPrompt(spec, evidence, input.options), {
+    const researched = await host.research(researchPrompt(spec, suppliedEvidence, input.options), {
       skills: spec.skills,
       permissions: researchPermissions,
     });
@@ -168,6 +182,15 @@ export const runWorkflow = async (
     }
     const state = spec.decodeState(capState(researched.state, input.options.limit));
     const decisionInputs = spec.decisionInputs(state);
+    if (suggestionReport !== undefined) {
+      const valid = new Set(suggestionReport.candidates.map((item) => `${item.source}\u0000${item.destination}\u0000${item.anchor}\u0000${item.sentence}`));
+      for (const item of decisionInputs) {
+        const link = item as { from?: unknown; to?: unknown; anchor?: unknown; context?: unknown };
+        if (!valid.has(`${link.from}\u0000${link.to}\u0000${link.anchor}\u0000${link.context}`)) {
+          throw new Error("Research proposed a link absent from the supplied suggestions");
+        }
+      }
+    }
     for (const item of decisionInputs) {
       const error = spec.validateDecisionInput(item);
       if (error !== undefined) throw new Error(error);
@@ -187,7 +210,7 @@ export const runWorkflow = async (
         filesAtStart: gitAtStart.files,
       },
       options: input.options,
-      evidence: { ...evidence, executor: researched.executor },
+      evidence: { ...suppliedEvidence, executor: researched.executor },
       state,
       decisionInputs,
       opencode: {
@@ -202,8 +225,17 @@ export const runWorkflow = async (
 
     try {
       const decisionReport = await (dependencies.decide ?? defaultDecide)(decisionInputs, spec);
-      const acted = spec.mutatesFiles
-        ? await host.continue(researched.sessionId, actionPrompt(spec, state, decisionReport, mutation), {
+      const accepted = spec.id === "improve.links"
+        ? decisionReport.resolved.filter((record) => record.verdict === "add" || record.verdict === "update")
+        : undefined;
+      const acceptedRefs = new Set(accepted?.map((record) => record.inputRef));
+      const actionState = accepted === undefined ? state : {
+        ...(state as Record<string, unknown>),
+        items: (state as { items: ReadonlyArray<{ from: string; to: string }> }).items.filter((item) => acceptedRefs.has(`${item.from} → ${item.to}`)),
+      };
+      const mayAct = spec.mutatesFiles && (accepted === undefined || accepted.length > 0);
+      const acted = mayAct
+        ? await host.continue(researched.sessionId, actionPrompt(spec, actionState, decisionReport, mutation), {
             skills: spec.skills,
             permissions: actionPermissions,
           })
@@ -228,13 +260,13 @@ export const runWorkflow = async (
           queries: input.options.queries,
           kinds: input.options.kinds,
         },
-        evidence: { ...evidence, executor: acted.executor },
+        evidence: { ...suppliedEvidence, executor: acted.executor },
         decisions: [decisionArtifact(spec, decisionInputs, decisionReport)],
         changes: {
           files,
           providerCalls: acted.executor.calls.map((call) => call.tool),
         },
-        result: spec.mutatesFiles ? acted.state : state,
+        result: mayAct ? acted.state : accepted !== undefined ? { summary: "No link suggestions accepted.", outcome: "no-change", files: [] } : state,
         opencode: { agent: "seo", sessionId: acted.sessionId, transcript: acted.transcript },
       };
       return { run, directory: writeRunBundle(input.root, runsDirectory, run) };

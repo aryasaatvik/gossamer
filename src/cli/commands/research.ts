@@ -87,6 +87,10 @@ const allowDirtyFlag = Flag.Boolean("allow-dirty").pipe(
   Flag.withDescription("Permit file changes when the working tree is already dirty"),
   Flag.withDefault(false),
 );
+export const suggestionsFlag = Flag.String("suggestions").pipe(
+  Flag.withDescription("Schema-version-2 links candidate JSON to evaluate"),
+  Flag.optional,
+);
 
 type FlagSet = Readonly<Record<string, Flag.Flag<unknown>>>;
 
@@ -145,6 +149,7 @@ const optionsFrom = (
     refresh: flags.refresh === true,
     dryRun: extra.dryRun === true,
     allowDirty: extra.allowDirty === true,
+    suggestions: optionalString(flags.suggestions),
   };
 };
 

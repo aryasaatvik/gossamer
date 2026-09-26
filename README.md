@@ -520,6 +520,24 @@ pagegraph links candidates --rendered rendered.json --json | jq
 pagegraph improve links --page "/docs/**"
 ```
 
+For content-backed placements, opt in to a bounded same-origin probe. The configured
+`origin` must match `--site`. Each schema-version-2 result carries a sentence
+from served main content, an exact anchor phrase inside it, a target sentence,
+and score components. Unreadable and over-limit pages are reported as skipped.
+The pair-only command above remains offline and emits schema version 1.
+
+```bash
+pagegraph links verify https://example.com --json
+pagegraph links candidates --site https://example.com --page-limit 25 --json > suggestions.json
+pagegraph improve links --suggestions suggestions.json --dry-run
+pagegraph improve links --suggestions suggestions.json
+```
+
+`improve links` validates the artifact against the configured origin and graph,
+then asks Jev to judge the suggested placements. Only accepted `add` or `update`
+decisions can open an edit turn; skipped and review-band links remain in the run
+artifact without authorizing an edit.
+
 ### Contextual-link coverage
 
 Declare a contextual-link coverage policy in `seo.config.ts` (a `coverage` array

@@ -1,5 +1,6 @@
 import type { DecisionBatchReport } from "../decide/record";
 import type { SerializedGraph } from "../cli/serialize";
+import type { LinksSuggestionReport } from "../core/link-suggestions";
 
 /** A selected page's direct relationship to a page outside the workflow target set. */
 export interface WorkflowGraphNeighbor {
@@ -52,6 +53,7 @@ export interface WorkflowTargetOptions {
   readonly refresh: boolean;
   readonly dryRun: boolean;
   readonly allowDirty: boolean;
+  readonly suggestions?: string | undefined;
 }
 
 export interface KeywordCandidate {
@@ -94,6 +96,7 @@ export interface WorkflowRunV1 {
     /** Optional so existing V1 run artifacts remain readable. */
     readonly neighborhood?: WorkflowGraphNeighborhood | undefined;
     readonly sources: ReadonlyArray<{ readonly path: string; readonly content: string }>;
+    readonly suggestions?: LinksSuggestionReport | undefined;
     readonly executor: ExecutorEvidence;
   };
   readonly decisions: ReadonlyArray<{
@@ -131,6 +134,7 @@ export interface WorkflowResearchCheckpointV1 {
     readonly graph: SerializedGraph;
     readonly neighborhood: WorkflowGraphNeighborhood;
     readonly sources: ReadonlyArray<{ readonly path: string; readonly content: string }>;
+    readonly suggestions?: LinksSuggestionReport | undefined;
     readonly executor: ExecutorEvidence;
   };
   readonly state: unknown;

@@ -5,6 +5,7 @@ import {
   baseFlags,
   dryRunFlag,
   queryFlag,
+  suggestionsFlag,
   workflowCommand,
 } from "./research";
 
@@ -58,6 +59,7 @@ export const improveCommandGroup = Command.make("improve").pipe(
       description: "Add contextual internal links and update PageGraph declarations when appropriate",
       flags: {
         ...baseFlags,
+        suggestions: suggestionsFlag,
         dryRun: writeFlags.dryRun,
         allowDirty: writeFlags.allowDirty,
       },
