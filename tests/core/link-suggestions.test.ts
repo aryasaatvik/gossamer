@@ -110,6 +110,23 @@ describe("content-backed link suggestions", () => {
     expect(extractPageSentences("<main><li>use the Services for protected health information; or</li></main>")).toEqual([]);
   });
 
+  it("accepts a single hyphenated anchor containing two content terms", () => {
+    const technical = { source: "/docs/signing", destination: "/docs/hmac", cluster: "docs", reason: "same section" };
+    const source = "Use HMAC-SHA256 for signed delivery events.";
+    const target = "HMAC-SHA256 verifies webhook signatures across retries.";
+    expect(rankLinkSuggestions([technical], [{ path: technical.source, sentences: [source] },
+      { path: technical.destination, sentences: [target] }], new Map(), 10).candidates[0]?.anchor).toBe("HMAC-SHA256");
+  });
+
+  it("requires a top-level destination anchor to name its topic", () => {
+    const hub = { source: "/compare", destination: "/tools", cluster: "kind:page", reason: "same kind" };
+    const target = "Email tools for product teams.";
+    expect(rankLinkSuggestions([hub], [{ path: hub.source, sentences: ["See the email APIs product teams already use."] },
+      { path: hub.destination, sentences: [target] }], new Map(), 10).total).toBe(0);
+    expect(rankLinkSuggestions([hub], [{ path: hub.source, sentences: ["Compare the email tools product teams already use."] },
+      { path: hub.destination, sentences: [target] }], new Map(), 10).candidates[0]?.anchor).toContain("tools");
+  });
+
   it("selects a bounded explicit pair from a large declared graph", () => {
     const paths = [...Array.from({ length: 2000 }, (_, index) => `/blog/a${index}`), "/blog/guide", "/blog/retries"];
     const node = (path: string) => ({ path, kind: "article", source: "blog" as const,

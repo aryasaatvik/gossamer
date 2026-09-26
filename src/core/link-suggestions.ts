@@ -176,6 +176,7 @@ const anchorPhrases = (sentence: string): ReadonlyArray<string> => {
   const phrases: Array<string> = [];
   for (let start = 0; start < tokens.length; start++) {
     if (stop.has(tokens[start]!.text.toLowerCase()) || clauseBreaks.has(tokens[start]!.text.toLowerCase())) continue;
+    if (new Set(words(tokens[start]!.text)).size >= 2) phrases.push(tokens[start]!.text);
     for (let end = start + 1; end < Math.min(tokens.length, start + 5); end++) {
       if (!/^\s+$/.test(sentence.slice(tokens[end - 1]!.end, tokens[end]!.start))) break;
       if (clauseBreaks.has(tokens[end]!.text.toLowerCase())) break;
@@ -199,40 +200,44 @@ export const rankLinkSuggestions = (
   for (const page of pages) {
     for (const term of new Set(page.sentences.flatMap(words))) frequency.set(term, (frequency.get(term) ?? 0) + 1);
   }
+  const targetIndexes = new Map(pages.map((page) => {
+    const passages = page.sentences.map((sentence) => ({ sentence, normalized: sentence.toLowerCase().replace(/\s+/g, " ").trim(), terms: new Set(words(sentence)) }));
+    const byTerm = new Map<string, Array<number>>();
+    passages.forEach((passage, index) => {
+      for (const term of passage.terms) {
+        if (!byTerm.has(term)) byTerm.set(term, []);
+        byTerm.get(term)!.push(index);
+      }
+    });
+    return [page.path, { passages, byTerm, terms: new Set(passages.flatMap((passage) => [...passage.terms])) }] as const;
+  }));
   const scored: Array<LinkSuggestion> = [];
   for (const pair of pairs) {
     const source = byPath.get(pair.source);
     const target = byPath.get(pair.destination);
-    if (!source || !target || pair.destination === "/") continue;
+    const targetIndex = targetIndexes.get(pair.destination);
+    if (!source || !target || !targetIndex || pair.destination === "/") continue;
     const destinationSegments = pair.destination.split("/").filter(Boolean);
     const destinationSlug = destinationSegments.at(-1) ?? "";
     const destinationTerms = words(destinationSlug.replace(/[-_]/g, " "));
-    const siblingPolicyOrComparison = destinationSegments.length >= 2 && ["compare", "legal"].includes(destinationSegments[0]!);
-    const namedDestination = destinationTerms.filter((term) => siblingPolicyOrComparison || term.length <= 3
+    const namedSection = destinationSegments.length >= 2 && ["compare", "legal"].includes(destinationSegments[0]!);
+    const namedDestination = destinationTerms.filter((term) => destinationSegments.length === 1 || namedSection || term.length <= 3
       || target.sentences.some((sentence) => [...sentence.matchAll(/\b[A-Z][A-Za-z0-9]*\b/g)]
         .some((match) => match[0].toLowerCase() === term)));
-    const targetPassages = target.sentences.map((sentence) => ({ sentence, terms: new Set(words(sentence)) }));
-    const targetByTerm = new Map<string, Array<number>>();
-    targetPassages.forEach((passage, index) => {
-      for (const term of passage.terms) {
-        if (!targetByTerm.has(term)) targetByTerm.set(term, []);
-        targetByTerm.get(term)!.push(index);
-      }
-    });
-    const targetTerms = new Set(targetPassages.flatMap((passage) => [...passage.terms]));
     let best: LinkSuggestion | undefined;
     for (const sentence of source.sentences) {
-      const matching = [...new Set(words(sentence))].filter((term) => targetTerms.has(term));
+      const sourceTerms = new Set(words(sentence));
+      const matching = [...sourceTerms].filter((term) => targetIndex.terms.has(term));
       if (matching.length < 2) continue;
+      const normalizedSource = sentence.toLowerCase().replace(/\s+/g, " ").trim();
       for (const anchor of anchorPhrases(sentence)) {
         const anchorTerms = [...new Set(words(anchor))];
         if (namedDestination.length > 0 && !anchorTerms.some((term) => namedDestination.includes(term))) continue;
-        const possible = anchorTerms.map((term) => targetByTerm.get(term) ?? []).sort((a, b) => a.length - b.length)[0] ?? [];
-        const passageIndex = possible.find((index) => anchorTerms.every((term) => targetPassages[index]!.terms.has(term)));
+        const possible = anchorTerms.map((term) => targetIndex.byTerm.get(term) ?? []).sort((a, b) => a.length - b.length)[0] ?? [];
+        const passageIndex = possible.find((index) => anchorTerms.every((term) => targetIndex.passages[index]!.terms.has(term)));
         if (passageIndex === undefined) continue;
-        const passage = targetPassages[passageIndex]!;
-        if (sentence.toLowerCase().replace(/\s+/g, " ").trim() === passage.sentence.toLowerCase().replace(/\s+/g, " ").trim()) continue;
-        const sourceTerms = new Set(words(sentence));
+        const passage = targetIndex.passages[passageIndex]!;
+        if (normalizedSource === passage.normalized) continue;
         const overlap = [...sourceTerms].filter((term) => passage.terms.has(term)).length;
         if (overlap >= 6 && overlap / Math.min(sourceTerms.size, passage.terms.size) >= 0.7) continue;
         const topical = anchorTerms.length;
