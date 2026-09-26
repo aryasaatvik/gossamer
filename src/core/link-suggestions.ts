@@ -62,22 +62,36 @@ export const selectSuggestionPages = (
   for (const node of eligible) {
     const segments = node.path.split("/").filter(Boolean);
     const section = segments[0];
-    if (section) sections.set(section, [...(sections.get(section) ?? []), node]);
-    if (segments.length <= 1) rootKinds.set(node.kind, [...(rootKinds.get(node.kind) ?? []), node]);
+    if (section) {
+      if (!sections.has(section)) sections.set(section, []);
+      sections.get(section)!.push(node);
+    }
+    if (segments.length <= 1) {
+      if (!rootKinds.has(node.kind)) rootKinds.set(node.kind, []);
+      rootKinds.get(node.kind)!.push(node);
+    }
   }
-  const destinations = (options.targets.size === 0 ? eligible : eligible.filter((node) => options.targets.has(node.path)))
+  const requestedSources = eligible.filter((node) => options.sources.has(node.path));
+  const relevant = new Map<string, SeoNode>();
+  for (const source of requestedSources) {
+    const segments = source.path.split("/").filter(Boolean);
+    for (const node of segments[0] ? sections.get(segments[0]) ?? [] : []) relevant.set(node.path, node);
+    if (segments.length <= 1) for (const node of rootKinds.get(source.kind) ?? []) relevant.set(node.path, node);
+  }
+  const relevantDestinations = options.sources.size === 0 ? eligible : [...relevant.values()];
+  const destinations = (options.targets.size === 0 ? relevantDestinations : relevantDestinations.filter((node) => options.targets.has(node.path)))
     .sort((a, b) => (inbound.get(a.path) ?? 0) - (inbound.get(b.path) ?? 0) || a.path.localeCompare(b.path));
   const directionBudget = Math.max(100, options.pageLimit * 100);
   let examined = 0;
   for (const destination of destinations) {
     if (selected.size >= options.pageLimit || examined >= directionBudget) break;
     const section = destination.path.split("/").filter(Boolean)[0];
-    const sources = [...new Map([
+    const sources = options.sources.size > 0 ? requestedSources : [...new Map([
       ...(section ? sections.get(section) ?? [] : []),
       ...(destination.path.split("/").filter(Boolean).length <= 1 ? rootKinds.get(destination.kind) ?? [] : []),
     ].map((node) => [node.path, node])).values()];
     for (const source of sources) {
-      if (source.path === destination.path || (options.sources.size > 0 && !options.sources.has(source.path))) continue;
+      if (source.path === destination.path) continue;
       if (++examined > directionBudget) break;
       const cluster = candidateClusterOf(source, destination);
       if (!cluster || (options.clusters.length > 0 && !options.clusters.some((filter) => matchesClusterFilter(cluster.key, filter)))
@@ -196,7 +210,7 @@ export const decodeLinksSuggestionReport = (value: unknown, origin: string): Lin
     throw new Error(`Expected schema-version-2 suggestions for ${origin}`);
   }
   if (!Number.isSafeInteger(report.limit) || report.limit! < 1 || !Number.isSafeInteger(report.pageLimit) || report.pageLimit! < 1
-    || !Number.isSafeInteger(report.maxBodyBytes) || report.maxBodyBytes! < 1 || report.maxBodyBytes! > 10_000_000
+    || (report.maxBodyBytes !== undefined && (!Number.isSafeInteger(report.maxBodyBytes) || report.maxBodyBytes < 1 || report.maxBodyBytes > 10_000_000))
     || !Number.isSafeInteger(report.total) || report.total! < report.candidates.length
     || typeof report.truncated !== "boolean" || !Array.isArray(report.skipped)) throw new Error("Invalid suggestion report counts");
   const seen = new Set<string>();
@@ -214,5 +228,7 @@ export const decodeLinksSuggestionReport = (value: unknown, origin: string): Lin
     if (seen.has(key)) throw new Error("Duplicate suggestion candidate");
     seen.add(key);
   }
-  return report as LinksSuggestionReport;
+  // Early version-2 artifacts did not carry the capture limit. Use the same
+  // bounded maximum allowed by site mode so their verbatim passages can be rechecked.
+  return { ...report, maxBodyBytes: report.maxBodyBytes ?? 10_000_000 } as LinksSuggestionReport;
 };

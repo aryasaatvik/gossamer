@@ -65,12 +65,23 @@ describe("content-backed link suggestions", () => {
     expect(selectSuggestionPages(graph, { pageLimit: 2, sources: new Set([lateSource]), targets: new Set(), clusters: [], renderedEdges: [] }).map((page) => page.path)).toEqual(["/blog/a0", lateSource]);
   });
 
+  it("selects a late explicit source without scanning unrelated sections", () => {
+    const paths = [...Array.from({ length: 2000 }, (_, index) => `/early/p${index}`), "/late/source", "/late/target"];
+    const node = (path: string) => ({ path, kind: "article", source: "blog" as const,
+      policy: { kind: "article", sitemap: { priority: 0.5, changeFrequency: "monthly" as const } } });
+    const graph = { nodes: new Map(paths.map((path) => [path, node(path)])), edges: [] };
+    expect(selectSuggestionPages(graph, { pageLimit: 2, sources: new Set(["/late/source"]), targets: new Set(), clusters: [], renderedEdges: [] }).map((page) => page.path)).toEqual(["/late/source", "/late/target"]);
+  });
+
   it("rejects malformed, wrong-origin, and nonverbatim artifacts", () => {
     const candidate = rankLinkSuggestions([pair], [
       { path: pair.source, sentences: [sentence] }, { path: pair.destination, sentences: [targetSentence] },
     ], new Map(), 1).candidates[0]!;
     const report = { kind: "links-candidates", schemaVersion: 2, origin: "https://example.com", limit: 1, pageLimit: 2, maxBodyBytes: 3_000_000, total: 1, truncated: false, skipped: [], candidates: [candidate] };
     expect(decodeLinksSuggestionReport(report, report.origin)).toEqual(report);
+    const { maxBodyBytes: _missing, ...earlyVersionTwo } = report;
+    expect(decodeLinksSuggestionReport(earlyVersionTwo, report.origin).maxBodyBytes).toBe(10_000_000);
+    expect(() => decodeLinksSuggestionReport({ ...report, maxBodyBytes: 10_000_001 }, report.origin)).toThrow();
     expect(() => decodeLinksSuggestionReport(report, "https://other.example")).toThrow();
     expect(() => decodeLinksSuggestionReport({ ...report, candidates: [{ ...candidate, anchor: "invented" }] }, report.origin)).toThrow();
   });
