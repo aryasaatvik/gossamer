@@ -72,11 +72,22 @@ export const selectSuggestionPages = (
     }
   }
   const requestedSources = eligible.filter((node) => options.sources.has(node.path));
+  const requestedSections = new Map<string, Array<SeoNode>>();
+  const requestedRootKinds = new Map<string, Array<SeoNode>>();
   const relevant = new Map<string, SeoNode>();
   for (const source of requestedSources) {
     const segments = source.path.split("/").filter(Boolean);
-    for (const node of segments[0] ? sections.get(segments[0]) ?? [] : []) relevant.set(node.path, node);
-    if (segments.length <= 1) for (const node of rootKinds.get(source.kind) ?? []) relevant.set(node.path, node);
+    const section = segments[0];
+    if (section) {
+      if (!requestedSections.has(section)) requestedSections.set(section, []);
+      requestedSections.get(section)!.push(source);
+      for (const node of sections.get(section) ?? []) relevant.set(node.path, node);
+    }
+    if (segments.length <= 1) {
+      if (!requestedRootKinds.has(source.kind)) requestedRootKinds.set(source.kind, []);
+      requestedRootKinds.get(source.kind)!.push(source);
+      for (const node of rootKinds.get(source.kind) ?? []) relevant.set(node.path, node);
+    }
   }
   const relevantDestinations = options.sources.size === 0 ? eligible : [...relevant.values()];
   const destinations = (options.targets.size === 0 ? relevantDestinations : relevantDestinations.filter((node) => options.targets.has(node.path)))
@@ -85,10 +96,11 @@ export const selectSuggestionPages = (
   let examined = 0;
   for (const destination of destinations) {
     if (selected.size >= options.pageLimit || examined >= directionBudget) break;
-    const section = destination.path.split("/").filter(Boolean)[0];
-    const sources = options.sources.size > 0 ? requestedSources : [...new Map([
-      ...(section ? sections.get(section) ?? [] : []),
-      ...(destination.path.split("/").filter(Boolean).length <= 1 ? rootKinds.get(destination.kind) ?? [] : []),
+    const segments = destination.path.split("/").filter(Boolean);
+    const section = segments[0];
+    const sources = [...new Map([
+      ...(section ? (options.sources.size > 0 ? requestedSections : sections).get(section) ?? [] : []),
+      ...(segments.length <= 1 ? (options.sources.size > 0 ? requestedRootKinds : rootKinds).get(destination.kind) ?? [] : []),
     ].map((node) => [node.path, node])).values()];
     for (const source of sources) {
       if (source.path === destination.path) continue;

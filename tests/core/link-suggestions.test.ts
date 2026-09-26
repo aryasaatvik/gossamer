@@ -73,6 +73,15 @@ describe("content-backed link suggestions", () => {
     expect(selectSuggestionPages(graph, { pageLimit: 2, sources: new Set(["/late/source"]), targets: new Set(), clusters: [], renderedEdges: [] }).map((page) => page.path)).toEqual(["/late/source", "/late/target"]);
   });
 
+  it("does not spend the direction budget on unrelated requested sources", () => {
+    const paths = ["/early/source", ...Array.from({ length: 200 }, (_, index) => `/early/p${index}`), "/late/source", "/late/target"];
+    const node = (path: string) => ({ path, kind: "article", source: "blog" as const,
+      policy: { kind: "article", sitemap: { priority: 0.5, changeFrequency: "monthly" as const } } });
+    const graph = { nodes: new Map(paths.map((path) => [path, node(path)])), edges: [] };
+    expect(selectSuggestionPages(graph, { pageLimit: 3, sources: new Set(["/early/source", "/late/source"]), targets: new Set(), clusters: ["late"], renderedEdges: [] }).map((page) => page.path))
+      .toEqual(["/early/source", "/late/source", "/late/target"]);
+  });
+
   it("rejects malformed, wrong-origin, and nonverbatim artifacts", () => {
     const candidate = rankLinkSuggestions([pair], [
       { path: pair.source, sentences: [sentence] }, { path: pair.destination, sentences: [targetSentence] },
