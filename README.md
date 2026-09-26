@@ -27,13 +27,14 @@ bun add -D lighthouse   # only for `pagegraph audit` performance evidence
 
 ### Agent skill
 
-The [Pagegraph skill](skills/pagegraph/SKILL.md) lives in this repository and covers its TanStack Start integration. Install it in a coding agent with:
+The Pagegraph CLI serves its bundled TanStack Start integration skill:
 
 ```bash
-npx skills add aryasaatvik/pagegraph
+pagegraph skills list
+pagegraph skills get core
 ```
 
-The skill is included in the npm package and maintained alongside Pagegraph's route declarations, rendered head helpers, Vite coverage gate, graph projections, and CLI checks.
+The skill is maintained at [skill-data/core/SKILL.md](skill-data/core/SKILL.md) and compiled into the CLI, so the instructions match the installed Pagegraph version. `skills get core` prints Markdown to stdout; `--json` returns a structured payload.
 
 | Entry                        | Exports                                                                                        | Peers                                       |
 | ---------------------------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------- |

@@ -199,7 +199,6 @@ try {
     "dist/audit.js",
     "dist/audit.d.ts",
     "dist/cli.js",
-    "skills/pagegraph/SKILL.md",
     "README.md",
     "LICENSE",
     "package.json",
@@ -250,9 +249,15 @@ try {
   if (!bundledBin.includes("pagegraph <subcommand>")) {
     throw new Error("Packed pagegraph bin did not run standalone (Effect must be bundled)");
   }
-  const packedSkill = await readFile(path.join(installedRoot, "skills/pagegraph/SKILL.md"), "utf8");
-  if (!packedSkill.startsWith("---\nname: pagegraph\n") || !packedSkill.includes("# Pagegraph and TanStack Start")) {
-    throw new Error("Packed Pagegraph skill is missing its integration guidance");
+  if (included.has("skill-data/core/SKILL.md")) {
+    throw new Error("Skill source must be embedded in the CLI, not shipped as a separate runtime file");
+  }
+  const packedSkill = await runSuccessfully(
+    [executable, "skills", "get", "core"],
+    installDirectory,
+  );
+  if (!packedSkill.startsWith("---\nname: core\n") || !packedSkill.includes("# Pagegraph and TanStack Start")) {
+    throw new Error("Packed Pagegraph CLI did not serve its embedded integration skill");
   }
 
   await runSuccessfully(

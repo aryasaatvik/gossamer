@@ -1,5 +1,5 @@
 ---
-name: pagegraph
+name: core
 description: Use when integrating or debugging Pagegraph's route-declared SEO in a TanStack Start app, including staticData.seo, rendered head tags, the Vite coverage gate, sitemap and robots projections, and CLI checks.
 ---
 
