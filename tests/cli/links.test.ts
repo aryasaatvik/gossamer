@@ -44,7 +44,7 @@ beforeAll(async () => {
         return;
       case "/robots.txt":
         response.writeHead(200, { "content-type": "text/plain" });
-        response.end("User-agent: *\nDisallow: /blocked\n");
+        response.end("User-agent: *\nAllow: /blocked\n\nUser-agent: Pagegraph\nDisallow: /blocked\n");
         return;
       case "/sitemap.xml":
         response.writeHead(200, { "content-type": "application/xml" });

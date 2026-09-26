@@ -6,6 +6,7 @@ import { crawlRenderedPages } from "../../src/audit/crawl";
 
 let server: Server;
 let origin: string;
+let offOriginUrl = "";
 
 const page = (body: string) => `<!doctype html><html><body>${body}</body></html>`;
 
@@ -31,6 +32,19 @@ beforeAll(async () => {
         return;
       case "/big":
         response.end(page(`<a href="/target">Target</a>${"x".repeat(5_000)}`));
+        return;
+      case "/canonical-alias":
+        html('<link rel="canonical" href="/canonical-target"><a href="/canonical-target">Target</a>');
+        return;
+      case "/canonical-unvisited":
+        html('<link rel="canonical" href="/canonical-target">Alias body');
+        return;
+      case "/canonical-target":
+        html("Canonical body");
+        return;
+      case "/off-origin":
+        response.writeHead(302, { location: offOriginUrl });
+        response.end();
         return;
       default:
         response.writeHead(404, { "content-type": "text/plain" });
@@ -79,5 +93,71 @@ describe("crawlRenderedPages", () => {
     expect(result.pages.map((rendered) => new URL(rendered.url).pathname)).toEqual(["/big"]);
     expect(result.root).toBe("/big");
     expect(result.truncatedBodies).toEqual([`${origin}/big`]);
+  });
+
+  it("falls back to page links after a malformed sitemap and reports incomplete discovery", async () => {
+    const fixture = createServer((request, response) => {
+      if (request.url === "/sitemap.xml") {
+        response.writeHead(200, { "content-type": "application/xml" });
+        response.end("<broken>");
+      } else if (request.url === "/") {
+        response.writeHead(200, { "content-type": "text/html" });
+        response.end(page('<a href="/linked">Linked</a>'));
+      } else if (request.url === "/linked") {
+        response.writeHead(200, { "content-type": "text/html" });
+        response.end(page("Linked"));
+      } else {
+        response.writeHead(404);
+        response.end();
+      }
+    });
+    await new Promise<void>((resolve) => fixture.listen(0, "127.0.0.1", resolve));
+    try {
+      const address = fixture.address();
+      if (address === null || typeof address === "string") throw new Error("Fixture did not bind");
+      const site = `http://127.0.0.1:${address.port}`;
+      const result = await crawlRenderedPages(`${site}/`, {
+        limit: 10, timeoutMs: 5_000, maxBodyBytes: 10_000, allowPrivate: true,
+      });
+      expect(result.pages.map((rendered) => new URL(rendered.url).pathname)).toEqual(["/", "/linked"]);
+      expect(result.discoveryFailures).toEqual([{ url: `${site}/sitemap.xml`, error: "malformed sitemap" }]);
+      expect(result.sitemapUsed).toBe(false);
+    } finally {
+      await new Promise<void>((resolve) => fixture.close(() => resolve()));
+    }
+  });
+
+  it("dedupes a canonical alias only after fetching the canonical HTML", async () => {
+    const options = { limit: 5, timeoutMs: 5_000, maxBodyBytes: 10_000, allowPrivate: true };
+    const fetched = await crawlRenderedPages(`${origin}/canonical-alias`, options);
+    expect(fetched.pages.map((page) => new URL(page.url).pathname)).toEqual(["/canonical-target"]);
+    expect(fetched.root).toBe("/canonical-target");
+
+    const unvisited = await crawlRenderedPages(`${origin}/canonical-unvisited`, options);
+    expect(unvisited.pages.map((page) => new URL(page.url).pathname)).toEqual(["/canonical-unvisited"]);
+    expect(unvisited.root).toBe("/canonical-unvisited");
+  });
+
+  it("does not request an off-origin redirect target", async () => {
+    let fetched = 0;
+    const remote = createServer((_request, response) => {
+      fetched += 1;
+      response.end(page("Remote"));
+    });
+    await new Promise<void>((resolve) => remote.listen(0, "127.0.0.1", resolve));
+    try {
+      const address = remote.address();
+      if (address === null || typeof address === "string") throw new Error("Fixture did not bind");
+      offOriginUrl = `http://127.0.0.1:${address.port}/remote`;
+      const result = await crawlRenderedPages(`${origin}/off-origin`, {
+        limit: 2, timeoutMs: 5_000, maxBodyBytes: 10_000, allowPrivate: true,
+      });
+      expect(result.pages).toEqual([]);
+      expect(result.failures[0]?.error).toContain("Redirected off-origin");
+      expect(fetched).toBe(0);
+    } finally {
+      await new Promise<void>((resolve) => remote.close(() => resolve()));
+      offOriginUrl = "";
+    }
   });
 });

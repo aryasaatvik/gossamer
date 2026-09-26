@@ -77,9 +77,9 @@ const XML_LOC = /<loc\b[^>]*>([\s\S]*?)<\/loc>/gi;
 const xmlText = (value: string): string => value.trim().replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
 
 const robotsRules = (body: string): { readonly rules: ReadonlyArray<{ path: string; allow: boolean }>; readonly sitemaps: ReadonlyArray<string> } => {
-  const rules: Array<{ path: string; allow: boolean }> = [];
+  const groups: Array<{ agents: Array<string>; rules: Array<{ path: string; allow: boolean }> }> = [];
   const sitemaps: Array<string> = [];
-  let applies = false;
+  let group: { agents: Array<string>; rules: Array<{ path: string; allow: boolean }> } | undefined;
   let hasDirective = false;
   for (const raw of body.split(/\r?\n/)) {
     const line = raw.replace(/\s+#.*$/, "").trim();
@@ -89,22 +89,37 @@ const robotsRules = (body: string): { readonly rules: ReadonlyArray<{ path: stri
     const value = match[2]!.trim();
     if (name === "sitemap") { sitemaps.push(value); continue; }
     if (name === "user-agent") {
-      if (hasDirective) { applies = false; hasDirective = false; }
-      if (value === "*") applies = true;
+      if (group === undefined || hasDirective) {
+        group = { agents: [], rules: [] };
+        groups.push(group);
+        hasDirective = false;
+      }
+      group.agents.push(value.toLowerCase());
       continue;
     }
     if (name === "allow" || name === "disallow") {
       hasDirective = true;
-      if (applies && value.startsWith("/")) rules.push({ path: value, allow: name === "allow" });
+      if (group !== undefined && value.startsWith("/")) group.rules.push({ path: value, allow: name === "allow" });
     }
   }
+  const score = (agent: string): number => agent === "*" ? 0 : "pagegraph/0.4".startsWith(agent) ? agent.length : -1;
+  const best = Math.max(-1, ...groups.flatMap((entry) => entry.agents.map(score)));
+  const rules = groups.filter((entry) => best >= 0 && entry.agents.some((agent) => score(agent) === best))
+    .flatMap((entry) => entry.rules);
   return { rules, sitemaps };
 };
 
 const allowedByRobots = (path: string, rules: ReadonlyArray<{ path: string; allow: boolean }>): boolean => {
   let chosen: { path: string; allow: boolean } | undefined;
+  let bestLength = -1;
   for (const rule of rules) {
-    if (path.startsWith(rule.path) && (chosen === undefined || rule.path.length >= chosen.path.length)) chosen = rule;
+    const pattern = rule.path.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*").replace(/\$$/, "$");
+    if (!new RegExp(`^${pattern}`).test(path)) continue;
+    const length = rule.path.replace(/[\*$]/g, "").length;
+    if (length > bestLength || (length === bestLength && rule.allow)) {
+      chosen = rule;
+      bestLength = length;
+    }
   }
   return chosen?.allow ?? true;
 };
@@ -166,6 +181,7 @@ export const crawlRenderedPages = async (
   const visited = new Set<string>([pageKey(seedUrl)]);
   /** Final paths already rendered, so a redirect cannot add the same page twice. */
   const rendered = new Set<string>();
+  const canonicalByPath = new Map<string, string>();
   const pages: Array<RenderedPage> = [];
   const failures: Array<CrawlFailure> = [];
   const truncatedBodies: Array<string> = [];
@@ -189,7 +205,7 @@ export const crawlRenderedPages = async (
   if (robots.bodyTruncated) discoveryFailures.push({ url: robots.requestedUrl, error: "robots.txt body truncated" });
   const policy = robots.ok && !robots.bodyTruncated ? robotsRules(robots.body ?? "") : { rules: [], sitemaps: [] };
   const permitted = (url: URL): boolean => {
-    if (allowedByRobots(url.pathname, policy.rules)) return true;
+    if (allowedByRobots(`${url.pathname}${url.search}`, policy.rules)) return true;
     skipped.push(url.href);
     return false;
   };
@@ -213,7 +229,6 @@ export const crawlRenderedPages = async (
       discoveryFailures.push({ url: url.href, error: probe.bodyTruncated ? "sitemap body truncated" : "malformed sitemap" });
       continue;
     }
-    sitemapUsed = true;
     const index = /<sitemapindex\b/i.test(body);
     const entries = [...body.matchAll(index ? /<sitemap\b[^>]*>([\s\S]*?)<\/sitemap>/gi : /<url\b[^>]*>([\s\S]*?)<\/url>/gi)];
     for (const entry of entries) {
@@ -233,6 +248,7 @@ export const crawlRenderedPages = async (
     }
     if (sitemapTruncated) break;
   }
+  sitemapUsed = sitemapUrls.length > 0;
   if (!permitted(seedUrl)) frontier = [];
 
   const probePage = async (item: QueueItem): Promise<ProbedPage> => {
@@ -256,7 +272,7 @@ export const crawlRenderedPages = async (
         canonical: null,
       };
     }
-    if (!probe.responseHeaders["content-type"]?.includes("text/html")) {
+    if (probe.responseHeaders["content-type"] !== undefined && !probe.responseHeaders["content-type"].includes("text/html")) {
       return {
         item, page: null,
         failure: { url: item.url.href, error: "Response is not HTML" },
@@ -313,15 +329,13 @@ export const crawlRenderedPages = async (
     for (const result of probed) {
       if (result.failure !== null) failures.push(result.failure);
       if (result.page === null) continue;
-      let page = result.page;
-      let finalKey = pageKey(new URL(page.url));
+      const page = result.page;
+      const finalKey = pageKey(new URL(page.url));
       if (result.canonical !== null) {
         try {
           const canonical = new URL(result.canonical, page.url);
-          if (canonical.origin === origin) {
-            finalKey = pageKey(canonical);
-            page = { ...page, url: canonical.href };
-          }
+          if (canonical.origin === origin && pageKey(canonical) !== finalKey)
+            canonicalByPath.set(finalKey, pageKey(canonical));
         } catch { /* Invalid canonical does not hide fetched HTML. */ }
       }
       // The seed's final path is the BFS root, even when the homepage redirected.
@@ -351,11 +365,20 @@ export const crawlRenderedPages = async (
     frontier = discovered;
   }
 
+  const retainedPages = pages.filter((page) => {
+    const canonical = canonicalByPath.get(pageKey(new URL(page.url)));
+    return canonical === undefined || !rendered.has(canonical);
+  });
+  const canonicalRoot = canonicalByPath.get(root);
+  if (canonicalRoot !== undefined && rendered.has(canonicalRoot)) root = canonicalRoot;
   return {
     origin,
     seed: seedUrl.href,
     root,
-    pages,
+    // Only collapse a canonical alias when the canonical page's own HTML was
+    // actually fetched. An unvisited canonical hint cannot claim the alias's
+    // outgoing anchors or silently erase the page from the rendered corpus.
+    pages: retainedPages,
     failures,
     truncatedBodies,
     truncated,
