@@ -220,10 +220,11 @@ export const rankLinkSuggestions = (
     const destinationSegments = pair.destination.split("/").filter(Boolean);
     const destinationSlug = destinationSegments.at(-1) ?? "";
     const destinationTerms = words(destinationSlug.replace(/[-_]/g, " "));
+    if (destinationSegments.length === 1 && destinationTerms.length === 0) continue;
     const namedSection = destinationSegments.length >= 2 && ["compare", "legal"].includes(destinationSegments[0]!);
-    const namedDestination = destinationTerms.filter((term) => destinationSegments.length === 1 || namedSection || term.length <= 3
-      || target.sentences.some((sentence) => [...sentence.matchAll(/\b[A-Z][A-Za-z0-9]*\b/g)]
-        .some((match) => match[0].toLowerCase() === term)));
+    const namedDestination = destinationTerms.filter((term) => destinationSegments.length === 1 || namedSection
+      || (term.length > 3 && target.sentences.some((sentence) => [...sentence.matchAll(/\b[A-Z][A-Za-z0-9]*\b/g)]
+        .some((match) => match[0].toLowerCase() === term))));
     let best: LinkSuggestion | undefined;
     for (const sentence of source.sentences) {
       const sourceTerms = new Set(words(sentence));
@@ -238,8 +239,6 @@ export const rankLinkSuggestions = (
         if (passageIndex === undefined) continue;
         const passage = targetIndex.passages[passageIndex]!;
         if (normalizedSource === passage.normalized) continue;
-        const overlap = [...sourceTerms].filter((term) => passage.terms.has(term)).length;
-        if (overlap >= 6 && overlap / Math.min(sourceTerms.size, passage.terms.size) >= 0.7) continue;
         const topical = anchorTerms.length;
         const rarity = Math.round(anchorTerms.reduce((sum, term) => sum + 1 / (frequency.get(term) ?? 1), 0) * 100) / 100;
         const inboundNeed = Math.round(100 / (1 + (inbound.get(pair.destination) ?? 0))) / 100;

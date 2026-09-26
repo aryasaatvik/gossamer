@@ -127,6 +127,17 @@ describe("content-backed link suggestions", () => {
       { path: hub.destination, sentences: [target] }], new Map(), 10).candidates[0]?.anchor).toContain("tools");
   });
 
+  it("keeps related guide copy when a short slug or shared terms do not name boilerplate", () => {
+    const api = { source: "/blog/signing", destination: "/blog/api", cluster: "blog", reason: "same section" };
+    const source = "Request signing and authentication protect delivery retries for each customer.";
+    const target = "The API uses request signing and authentication to protect delivery retries.";
+    expect(rankLinkSuggestions([api], [{ path: api.source, sentences: [source] },
+      { path: api.destination, sentences: [target] }], new Map(), 10).candidates).toHaveLength(1);
+    const about = { ...api, source: "/developers", destination: "/about" };
+    expect(rankLinkSuggestions([about], [{ path: about.source, sentences: ["The compiler catches a bad payload before it ships."] },
+      { path: about.destination, sentences: ["A service catches webhooks and suppresses bad addresses."] }], new Map(), 10).total).toBe(0);
+  });
+
   it("selects a bounded explicit pair from a large declared graph", () => {
     const paths = [...Array.from({ length: 2000 }, (_, index) => `/blog/a${index}`), "/blog/guide", "/blog/retries"];
     const node = (path: string) => ({ path, kind: "article", source: "blog" as const,
