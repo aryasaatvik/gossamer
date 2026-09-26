@@ -1,6 +1,6 @@
 {
   "name": "pagegraph",
-  "version": "0.8.4",
+  "version": "0.9.0",
   "description": "Route-declared SEO graph, audit, and agentic workflow toolkit for TanStack Start.",
   "keywords": [
     "seo",

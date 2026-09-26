@@ -1,10 +1,10 @@
 core:changelogs:
-  - content: "---\npackages:\n  pagegraph:\n    type: patch\n---\n\n### Preserve workflow evidence and diagnose interrupted research\n\nSelected pages retain their surrounding link relationships, and Executor evidence requires actual\ncompleted provider invocations. Research instructions inspect current tool schemas and respect the\nrequested scope. OpenCode completions support configurable deadlines, bounded interruption, and\nactivity diagnostics. Validated research is saved before decision inference so downstream failures\nretain useful evidence. Git mutation checks handle nested project roots and changed submodules.\n"
-    filename: 2026-09-22-workflow-evidence-and-checkpoints.md
+  - content: "---\npackages:\n  pagegraph:\n    type: minor\n---\n\n### Find better internal linking opportunities\n\nPageGraph now finds sitemap pages that links alone miss and suggests useful\ncontextual links backed by exact page text. Use `links candidates --site` to\nreview ranked suggestions, then pass them to `improve links --suggestions` to\napprove edits.\n"
+    filename: 2026-09-26-internal-linking-suggestions.md
     v: 0.0.0
 core:packages:
   - changelogIds:
-      - 2026-09-22-workflow-evidence-and-checkpoints.md
+      - 2026-09-26-internal-linking-suggestions.md
     id: npm:pagegraph
     updated: true
 npm:packages:
