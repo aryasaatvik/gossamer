@@ -76,6 +76,7 @@ describe("links candidates --site", () => {
     expect(result.status).toBe(0);
     const report = JSON.parse(result.stdout);
     expect(report.schemaVersion).toBe(2);
+    expect(report.maxBodyBytes).toBe(2_000_000);
     const item = report.candidates.find((candidate: { source: string }) => candidate.source === "/blog/guide");
     expect(item.sentence).toBe(source);
     expect(source).toContain(item.anchor);
@@ -84,6 +85,7 @@ describe("links candidates --site", () => {
 
   it("rejects a mismatched origin and reports page-limit truncation", async () => {
     expect((await run(["--site", "https://wrong.example", "--json"])).status).not.toBe(0);
+    expect((await run(["--site", origin, "--max-body-bytes", "10000001", "--json"])).status).not.toBe(0);
     const limited = await run(["--site", origin, "--allow-private", "--page-limit", "1", "--json"]);
     expect(limited.status).toBe(0);
     expect(JSON.parse(limited.stdout)).toMatchObject({ truncated: true });

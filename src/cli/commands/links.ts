@@ -573,6 +573,9 @@ const linksCandidatesCommand = Command.make("candidates", {
     Effect.fn("SeoCli.linksCandidates")(function* (options) {
       const limit = yield* positive("limit", options.limit);
       const pageLimit = yield* positive("page-limit", options.pageLimit);
+      if (Option.isSome(options.site) && (!Number.isSafeInteger(options.maxBodyBytes) || options.maxBodyBytes < 1 || options.maxBodyBytes > 10_000_000)) {
+        return yield* new SeoCliError({ message: "--max-body-bytes must be between 1 and 10000000 in site mode" });
+      }
 
       const config = yield* loadSeoConfig;
       const graph = yield* Effect.scoped(acquireGraph(config));
@@ -639,7 +642,7 @@ const linksCandidatesCommand = Command.make("candidates", {
               inbound.set(edge.to, (inbound.get(edge.to) ?? 0) + 1);
             }
             const ranked = rankLinkSuggestions(pairs, pages, inbound, limit);
-            return { kind: "links-candidates", schemaVersion: 2, origin: configured.origin, limit, pageLimit, total: ranked.total,
+            return { kind: "links-candidates", schemaVersion: 2, origin: configured.origin, limit, pageLimit, maxBodyBytes: options.maxBodyBytes, total: ranked.total,
               truncated: ranked.total > ranked.candidates.length || skipped.some((item) => item.reason === "page limit or target filter"),
               skipped, candidates: ranked.candidates };
           },

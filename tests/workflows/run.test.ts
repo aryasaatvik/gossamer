@@ -442,7 +442,7 @@ describe("workflow runner", () => {
     graph.nodes.set("/docs/email", { path: "/docs/email", kind: "page", source: "route", policy: { kind: "page", sitemap: { priority: 0.5, changeFrequency: "monthly" } } });
     const suggestion = { source: "/docs/email", destination: "/pricing", cluster: "kind:page", reason: "same kind; pricing options are relevant", sentence: "See the pricing options for transactional email teams.", anchor: "pricing options", targetSentence: "Pricing options include usage based plans for teams.", score: 4, scores: { topical: 2, rarity: 1, inboundNeed: 1, graph: 0.5 } };
     const path = join(root, "suggestions.json");
-    writeFileSync(path, JSON.stringify({ kind: "links-candidates", schemaVersion: 2, origin: config.origin, limit: 1, pageLimit: 2, total: 1, truncated: false, skipped: [], candidates: [suggestion] }));
+    writeFileSync(path, JSON.stringify({ kind: "links-candidates", schemaVersion: 2, origin: config.origin, limit: 1, pageLimit: 2, maxBodyBytes: 3_000_000, total: 1, truncated: false, skipped: [], candidates: [suggestion] }));
     git(root, "add", "suggestions.json"); git(root, "commit", "-m", "add suggestions");
     const state = { summary: "One candidate", items: [{ from: suggestion.source, to: suggestion.destination, anchor: suggestion.anchor, context: suggestion.sentence, relation: "pricing" }] };
     let continued = false;
@@ -477,7 +477,7 @@ describe("workflow runner", () => {
     const { root, graph, config } = fixture();
     graph.nodes.set("/docs/email", { path: "/docs/email", kind: "page", source: "route", policy: { kind: "page", sitemap: { priority: 0.5, changeFrequency: "monthly" } } });
     const path = join(root, "suggestions.json");
-    writeFileSync(path, JSON.stringify({ kind: "links-candidates", schemaVersion: 2, origin: config.origin, limit: 1, pageLimit: 2, total: 1, truncated: false, skipped: [], candidates: [{ source: "/docs/email", destination: "/pricing", cluster: "kind:page", reason: "same kind", sentence: "See the pricing options for transactional email teams.", anchor: "pricing options", targetSentence: "Pricing options include usage based plans for teams.", score: 4, scores: { topical: 2, rarity: 1, inboundNeed: 1, graph: 0.5 } }] }));
+    writeFileSync(path, JSON.stringify({ kind: "links-candidates", schemaVersion: 2, origin: config.origin, limit: 1, pageLimit: 2, maxBodyBytes: 3_000_000, total: 1, truncated: false, skipped: [], candidates: [{ source: "/docs/email", destination: "/pricing", cluster: "kind:page", reason: "same kind", sentence: "See the pricing options for transactional email teams.", anchor: "pricing options", targetSentence: "Pricing options include usage based plans for teams.", score: 4, scores: { topical: 2, rarity: 1, inboundNeed: 1, graph: 0.5 } }] }));
     git(root, "add", "suggestions.json"); git(root, "commit", "-m", "add suggestions");
     let acquired = false;
     await expect(runWorkflow({ config, graph, root, workflow: "improve.links", options: { ...options, pages: ["/pricing"], suggestions: path } }, {
@@ -491,7 +491,7 @@ describe("workflow runner", () => {
     graph.nodes.set("/docs/email", { path: "/docs/email", kind: "page", source: "route", policy: { kind: "page", sitemap: { priority: 0.5, changeFrequency: "monthly" } } });
     const candidate = { source: "/docs/email", destination: "/pricing", cluster: "kind:page", reason: "same kind", sentence: "See the pricing options for transactional email teams.", anchor: "pricing options", targetSentence: "Pricing options include usage based plans for teams.", score: 4, scores: { topical: 2, rarity: 1, inboundNeed: 1, graph: 0.5 } };
     const path = join(root, "suggestions.json");
-    writeFileSync(path, JSON.stringify({ kind: "links-candidates", schemaVersion: 2, origin: config.origin, limit: 1, pageLimit: 2, total: 1, truncated: false, skipped: [], candidates: [candidate] }));
+    writeFileSync(path, JSON.stringify({ kind: "links-candidates", schemaVersion: 2, origin: config.origin, limit: 1, pageLimit: 2, maxBodyBytes: 3_000_000, total: 1, truncated: false, skipped: [], candidates: [candidate] }));
     git(root, "add", "suggestions.json"); git(root, "commit", "-m", "add suggestions");
     let continued = false;
     await expect(runWorkflow({ config, graph, root, workflow: "improve.links", options: { ...options, limit: 2, suggestions: path } }, {
@@ -502,7 +502,10 @@ describe("workflow runner", () => {
         close: async () => {},
       }),
       decide: async () => ({ ...report("workflow-links"), resolved: [{ decisionId: "workflow-links:0", schemaVersion: 1, family: "workflow-links", model: "jev-latest", threshold: 0.7, inputHash: "fixture", inputRef: "/docs/email → /pricing", verdict: "add", review: false, answers: {} }] }),
-      readSuggestionSentences: async (_origin, page) => page === candidate.source ? ["The source page no longer mentions plans."] : [candidate.targetSentence],
+      readSuggestionSentences: async (_origin, page, _allowPrivate, maxBodyBytes) => {
+        expect(maxBodyBytes).toBe(3_000_000);
+        return page === candidate.source ? ["The source page no longer mentions plans."] : [candidate.targetSentence];
+      },
     })).rejects.toThrow("Suggestion is stale");
     expect(continued).toBe(false);
   });

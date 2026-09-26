@@ -48,6 +48,11 @@ describe("content-backed link suggestions", () => {
     expect(extracted.join(" ")).not.toContain("delivery retries and message tracking for another");
   });
 
+  it("ignores a main-tag example inside script and reads the visible article", () => {
+    const copy = "This article explains delivery retries and message tracking for transactional email teams.";
+    expect(extractPageSentences(`<script>const example = "<main>fake";</script><article><p>${copy}</p></article>`)).toEqual([copy]);
+  });
+
   it("selects a bounded explicit pair from a large declared graph", () => {
     const paths = [...Array.from({ length: 2000 }, (_, index) => `/blog/a${index}`), "/blog/guide", "/blog/retries"];
     const node = (path: string) => ({ path, kind: "article", source: "blog" as const,
@@ -55,13 +60,16 @@ describe("content-backed link suggestions", () => {
     const graph = { nodes: new Map(paths.map((path) => [path, node(path)])), edges: [] };
     expect(selectSuggestionPages(graph, { pageLimit: 2, sources: new Set(["/blog/guide"]), targets: new Set(["/blog/retries"]), clusters: [], renderedEdges: [] }).map((page) => page.path)).toEqual(["/blog/guide", "/blog/retries"]);
     expect(() => selectSuggestionPages(graph, { pageLimit: 2, sources: new Set(), targets: new Set(["/blog/guide", "/blog/retries"]), clusters: [], renderedEdges: [] })).toThrow("leave room");
+    const lateSource = `/blog/a1999`;
+    expect(selectSuggestionPages(graph, { pageLimit: 2, sources: new Set([lateSource]), targets: new Set(["/blog/retries"]), clusters: [], renderedEdges: [] }).map((page) => page.path)).toEqual([lateSource, "/blog/retries"]);
+    expect(selectSuggestionPages(graph, { pageLimit: 2, sources: new Set([lateSource]), targets: new Set(), clusters: [], renderedEdges: [] }).map((page) => page.path)).toEqual(["/blog/a0", lateSource]);
   });
 
   it("rejects malformed, wrong-origin, and nonverbatim artifacts", () => {
     const candidate = rankLinkSuggestions([pair], [
       { path: pair.source, sentences: [sentence] }, { path: pair.destination, sentences: [targetSentence] },
     ], new Map(), 1).candidates[0]!;
-    const report = { kind: "links-candidates", schemaVersion: 2, origin: "https://example.com", limit: 1, pageLimit: 2, total: 1, truncated: false, skipped: [], candidates: [candidate] };
+    const report = { kind: "links-candidates", schemaVersion: 2, origin: "https://example.com", limit: 1, pageLimit: 2, maxBodyBytes: 3_000_000, total: 1, truncated: false, skipped: [], candidates: [candidate] };
     expect(decodeLinksSuggestionReport(report, report.origin)).toEqual(report);
     expect(() => decodeLinksSuggestionReport(report, "https://other.example")).toThrow();
     expect(() => decodeLinksSuggestionReport({ ...report, candidates: [{ ...candidate, anchor: "invented" }] }, report.origin)).toThrow();

@@ -22,6 +22,7 @@ export interface LinksSuggestionReport {
   readonly origin: string;
   readonly limit: number;
   readonly pageLimit: number;
+  readonly maxBodyBytes: number;
   readonly total: number;
   readonly truncated: boolean;
   readonly skipped: ReadonlyArray<{ readonly path: string; readonly reason: string }>;
@@ -76,8 +77,8 @@ export const selectSuggestionPages = (
       ...(destination.path.split("/").filter(Boolean).length <= 1 ? rootKinds.get(destination.kind) ?? [] : []),
     ].map((node) => [node.path, node])).values()];
     for (const source of sources) {
-      if (++examined > directionBudget) break;
       if (source.path === destination.path || (options.sources.size > 0 && !options.sources.has(source.path))) continue;
+      if (++examined > directionBudget) break;
       const cluster = candidateClusterOf(source, destination);
       if (!cluster || (options.clusters.length > 0 && !options.clusters.some((filter) => matchesClusterFilter(cluster.key, filter)))
         || excluded.has(key(source.path, destination.path))) continue;
@@ -98,8 +99,9 @@ const decode = (text: string): string => text
 
 /** Restrict placements to visible main/article copy, ignoring site chrome and scripts. */
 export const extractPageSentences = (html: string): ReadonlyArray<string> => {
-  const container = /<main\b/i.test(html) ? "main" : "article";
-  if (!new RegExp(`<${container}\\b`, "i").test(html)) return [];
+  const visibleHtml = html.replace(/<(script|style|noscript|svg|nav|header|footer|template)\b[^>]*>[\s\S]*?<\/\1>/gi, " ");
+  const container = /<main\b/i.test(visibleHtml) ? "main" : "article";
+  if (!new RegExp(`<${container}\\b`, "i").test(visibleHtml)) return [];
   const suppressedTags = new Set(["script", "style", "noscript", "svg", "nav", "header", "footer", "template", "a"]);
   const blockTags = new Set(["p", "li", "blockquote", "section", "div", "h1", "h2", "h3", "h4", "h5", "h6"]);
   const voidTags = new Set(["area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"]);
@@ -108,7 +110,7 @@ export const extractPageSentences = (html: string): ReadonlyArray<string> => {
   let current = "";
   let inside = 0;
   const flush = () => { if (current.trim()) blocks.push(current); current = ""; };
-  for (const token of html.match(/<[^>]*>|[^<]+/g) ?? []) {
+  for (const token of visibleHtml.match(/<[^>]*>|[^<]+/g) ?? []) {
     if (!token.startsWith("<")) {
       if (inside > 0 && !stack.some((entry) => entry.suppressed)) current += token;
       continue;
@@ -194,6 +196,7 @@ export const decodeLinksSuggestionReport = (value: unknown, origin: string): Lin
     throw new Error(`Expected schema-version-2 suggestions for ${origin}`);
   }
   if (!Number.isSafeInteger(report.limit) || report.limit! < 1 || !Number.isSafeInteger(report.pageLimit) || report.pageLimit! < 1
+    || !Number.isSafeInteger(report.maxBodyBytes) || report.maxBodyBytes! < 1 || report.maxBodyBytes! > 10_000_000
     || !Number.isSafeInteger(report.total) || report.total! < report.candidates.length
     || typeof report.truncated !== "boolean" || !Array.isArray(report.skipped)) throw new Error("Invalid suggestion report counts");
   const seen = new Set<string>();

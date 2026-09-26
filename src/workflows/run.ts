@@ -44,11 +44,11 @@ export interface WorkflowDependencies {
   ) => Promise<DecisionBatchReport>;
   readonly now?: () => Date;
   /** Test seam for current served-copy validation before an accepted link edit. */
-  readonly readSuggestionSentences?: (origin: string, path: string, allowPrivate: boolean) => Promise<ReadonlyArray<string>>;
+  readonly readSuggestionSentences?: (origin: string, path: string, allowPrivate: boolean, maxBodyBytes: number) => Promise<ReadonlyArray<string>>;
 }
 
-const readCurrentSuggestionSentences = async (origin: string, path: string, allowPrivate: boolean): Promise<ReadonlyArray<string>> => {
-  const options = { sameOrigin: origin, allowPrivate, timeoutMs: 15_000, maxBodyBytes: 2_000_000 };
+const readCurrentSuggestionSentences = async (origin: string, path: string, allowPrivate: boolean, maxBodyBytes: number): Promise<ReadonlyArray<string>> => {
+  const options = { sameOrigin: origin, allowPrivate, timeoutMs: 15_000, maxBodyBytes };
   const robots = await probeHttp({ kind: "robots", method: "GET", accept: "text/plain", url: new URL("/robots.txt", origin) }, { ...options, captureBody: true });
   if ((!robots.ok && robots.status !== 404) || robots.bodyTruncated) throw new Error("Could not verify current robots policy for suggestion freshness");
   const rules = robots.ok ? robotsRules(robots.body ?? "").rules : [];
@@ -276,7 +276,7 @@ export const runWorkflow = async (
             && entry.anchor === item.anchor && entry.sentence === item.context);
           if (!candidate) throw new Error("Accepted link is absent from the supplied suggestions");
           for (const path of [candidate.source, candidate.destination]) {
-            if (!current.has(path)) current.set(path, await readSentences(suggestionReport.origin, path, input.options.allowPrivate === true));
+            if (!current.has(path)) current.set(path, await readSentences(suggestionReport.origin, path, input.options.allowPrivate === true, suggestionReport.maxBodyBytes));
           }
           if (!current.get(candidate.source)!.includes(candidate.sentence) || !current.get(candidate.destination)!.includes(candidate.targetSentence)) {
             throw new Error(`Suggestion is stale; served copy changed for ${candidate.source} → ${candidate.destination}. Regenerate links candidates --site.`);
