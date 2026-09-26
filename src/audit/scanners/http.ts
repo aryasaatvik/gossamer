@@ -309,6 +309,9 @@ export const probeHttp = async (
     let currentUrl = request.url;
     let response: IncomingMessage | null = null;
     for (let redirectCount = 0; redirectCount <= 10; redirectCount += 1) {
+      if (options.sameOrigin !== undefined && currentUrl.origin !== options.sameOrigin) {
+        throw new Error(`Redirected off-origin to ${currentUrl.href}`);
+      }
       response = await requestPinned(currentUrl, request, options);
       headersAt = performance.now();
       const location = response.headers.location;
@@ -359,6 +362,7 @@ export const probeHttp = async (
           : createHash("sha256").update(bounded.bytes).digest("hex"),
       bodyTruncated: bounded.truncated,
       bodyExcerpt: bodyExcerpt(body, contentType),
+      ...(options.captureBody === true ? { body } : {}),
       document:
         body.length === 0
           ? null
@@ -386,6 +390,7 @@ export const probeHttp = async (
       capturedBodySha256: null,
       bodyTruncated: false,
       bodyExcerpt: null,
+      ...(options.captureBody === true ? { body: undefined } : {}),
       document: null,
       error: errorMessage(error),
     };

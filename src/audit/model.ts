@@ -101,6 +101,10 @@ export interface ProbeOptions {
    * probe field that grows with document size; the audit report leaves it unset.
    */
   readonly captureAnchors?: boolean | undefined;
+  /** Capture bounded text for robots and sitemap discovery. Never enabled for audit reports. */
+  readonly captureBody?: boolean | undefined;
+  /** Refuse cross-origin redirects during a same-origin crawl. */
+  readonly sameOrigin?: string | undefined;
 }
 
 export interface DocumentSignals {
@@ -132,6 +136,7 @@ export interface HttpProbe {
   readonly capturedBodySha256: string | null;
   readonly bodyTruncated: boolean;
   readonly bodyExcerpt: string | null;
+  readonly body?: string | undefined;
   readonly document: DocumentSignals | null;
   /** Resolved anchors from the served HTML; set only when `captureAnchors` is on. */
   readonly anchors?: ReadonlyArray<Anchor> | undefined;

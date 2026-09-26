@@ -360,6 +360,10 @@ export interface RenderedEdgeArtifactCrawl {
   readonly truncatedPages: ReadonlyArray<string>;
   /** Pages that failed to fetch; their outgoing anchors are missing. */
   readonly failures: ReadonlyArray<RenderedEdgeFailure>;
+  readonly discoveryFailures?: ReadonlyArray<RenderedEdgeFailure>;
+  readonly skipped?: ReadonlyArray<string>;
+  readonly sitemapTruncated?: boolean;
+  readonly sitemapUsed?: boolean;
 }
 
 /**
@@ -498,6 +502,15 @@ export const decodeRenderedEdgeArtifact = (input: unknown): RenderedEdgeArtifact
   if (typeof provenance["truncated"] !== "boolean") {
     throw new Error("rendered-edge artifact `crawl.truncated` must be a boolean");
   }
+  const skipped = provenance["skipped"];
+  if (skipped !== undefined && (!Array.isArray(skipped) || !skipped.every((url) => typeof url === "string"))) {
+    throw new Error("rendered-edge artifact `crawl.skipped` must be an array of URLs");
+  }
+  for (const field of ["sitemapTruncated", "sitemapUsed"] as const) {
+    if (provenance[field] !== undefined && typeof provenance[field] !== "boolean") {
+      throw new Error(`rendered-edge artifact \`crawl.${field}\` must be a boolean`);
+    }
+  }
   return {
     kind: ARTIFACT_KIND,
     schemaVersion: RENDERED_EDGE_ARTIFACT_SCHEMA_VERSION,
@@ -511,6 +524,10 @@ export const decodeRenderedEdgeArtifact = (input: unknown): RenderedEdgeArtifact
       bodyTruncated: bodyTruncated === true,
       truncatedPages: (truncatedPages as ReadonlyArray<string> | undefined) ?? [],
       failures: decodeArtifactFailures(provenance["failures"]),
+      ...(provenance["discoveryFailures"] === undefined ? {} : { discoveryFailures: decodeArtifactFailures(provenance["discoveryFailures"]) }),
+      ...(skipped === undefined ? {} : { skipped: skipped as ReadonlyArray<string> }),
+      ...(provenance["sitemapTruncated"] === undefined ? {} : { sitemapTruncated: provenance["sitemapTruncated"] as boolean }),
+      ...(provenance["sitemapUsed"] === undefined ? {} : { sitemapUsed: provenance["sitemapUsed"] as boolean }),
     },
     nodes: decodeArtifactNodes(value["nodes"]),
     edges: decodeArtifactEdges(value["edges"]),

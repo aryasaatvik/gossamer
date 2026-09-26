@@ -249,6 +249,10 @@ export interface LinksVerifyReport {
     readonly bodyTruncated: boolean;
     /** URLs whose captured body was cut; anchors past the cutoff are missing. */
     readonly truncatedPages: ReadonlyArray<string>;
+    readonly discoveryFailures?: ReadonlyArray<LinksCrawlFailure>;
+    readonly skipped?: ReadonlyArray<string>;
+    readonly sitemapTruncated?: boolean;
+    readonly sitemapUsed?: boolean;
   };
   readonly rendered: {
     readonly pages: number;

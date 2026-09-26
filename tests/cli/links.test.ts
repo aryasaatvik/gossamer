@@ -39,7 +39,16 @@ beforeAll(async () => {
       case "/nav-only":
       case "/legal":
       case "/current":
+      case "/sitemap-only":
         html("<main>Leaf</main>");
+        return;
+      case "/robots.txt":
+        response.writeHead(200, { "content-type": "text/plain" });
+        response.end("User-agent: *\nDisallow: /blocked\n");
+        return;
+      case "/sitemap.xml":
+        response.writeHead(200, { "content-type": "application/xml" });
+        response.end(`<urlset><url><loc>${target}sitemap-only</loc></url><url><loc>${target}blocked</loc></url><url><loc>https://external.test/no</loc></url></urlset>`);
         return;
       case "/legacy":
         response.writeHead(301, { location: "/current" });
@@ -108,15 +117,19 @@ describe("pagegraph links verify", () => {
       origin: target.replace(/\/$/, ""),
       seed: target,
       crawl: {
-        pages: 6,
+        pages: 7,
         limit: 100,
         truncated: false,
         failures: [],
         bodyTruncated: false,
         truncatedPages: [],
+        discoveryFailures: [],
+        skipped: [`${target}blocked`],
+        sitemapTruncated: false,
+        sitemapUsed: true,
       },
       rendered: {
-        pages: 6,
+        pages: 7,
         // The /sitemap.xml anchor is a real internal body link even though the
         // crawl budget skips fetching it, so it counts as an edge.
         internalEdges: 7,
@@ -124,7 +137,7 @@ describe("pagegraph links verify", () => {
         maxDepth: 2,
         // /current is reached only through the /legacy redirect, so the graph
         // links nothing to its canonical path.
-        orphans: ["/current"],
+        orphans: ["/current", "/sitemap-only"],
       },
       declared: null,
       warnings: [],
@@ -216,7 +229,7 @@ describe("pagegraph links verify", () => {
 
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("max homepage depth  2");
-    expect(result.stdout).toContain("rendered orphans    1");
+    expect(result.stdout).toContain("rendered orphans    2");
     expect(result.stdout).toContain("/current");
   }, 20_000);
 

@@ -97,6 +97,8 @@ const analyzeDeclared = (
     readonly truncated: boolean;
     readonly bodyTruncated: boolean;
     readonly failures: number;
+    readonly discoveryFailures: number;
+    readonly sitemapTruncated: boolean;
   },
 ): Effect.Effect<DeclaredAnalysis, SeoCliError> =>
   Effect.gen(function* () {
@@ -110,6 +112,11 @@ const analyzeDeclared = (
       if (crawlState.failures > 0) {
         return yield* new SeoCliError({
           message: `Refusing to assert rendered coverage: ${crawlState.failures} page(s) failed to fetch, so their anchors are missing.`,
+        });
+      }
+      if (crawlState.discoveryFailures > 0 || crawlState.sitemapTruncated) {
+        return yield* new SeoCliError({
+          message: "Refusing to assert rendered coverage: sitemap or robots discovery was incomplete.",
         });
       }
       if (crawlState.bodyTruncated) {
@@ -320,6 +327,10 @@ const linksVerifyCommand = Command.make("verify", {
           failures: artifact.crawl.failures,
           bodyTruncated: artifact.crawl.bodyTruncated,
           truncatedPages: artifact.crawl.truncatedPages,
+          ...(artifact.crawl.discoveryFailures === undefined ? {} : { discoveryFailures: artifact.crawl.discoveryFailures }),
+          ...(artifact.crawl.skipped === undefined ? {} : { skipped: artifact.crawl.skipped }),
+          ...(artifact.crawl.sitemapTruncated === undefined ? {} : { sitemapTruncated: artifact.crawl.sitemapTruncated }),
+          ...(artifact.crawl.sitemapUsed === undefined ? {} : { sitemapUsed: artifact.crawl.sitemapUsed }),
         };
       } else {
         const checkedLimit = yield* positive("limit", options.limit);
@@ -356,6 +367,10 @@ const linksVerifyCommand = Command.make("verify", {
           failures: crawl.failures,
           bodyTruncated: crawl.truncatedBodies.length > 0,
           truncatedPages: crawl.truncatedBodies,
+          discoveryFailures: crawl.discoveryFailures,
+          skipped: crawl.skipped,
+          sitemapTruncated: crawl.sitemapTruncated,
+          sitemapUsed: crawl.sitemapUsed,
         };
 
         if (emitPath !== undefined) {
@@ -372,6 +387,10 @@ const linksVerifyCommand = Command.make("verify", {
               bodyTruncated: crawl.truncatedBodies.length > 0,
               truncatedPages: crawl.truncatedBodies,
               failures: crawl.failures,
+              discoveryFailures: crawl.discoveryFailures,
+              skipped: crawl.skipped,
+              sitemapTruncated: crawl.sitemapTruncated,
+              sitemapUsed: crawl.sitemapUsed,
             },
             nodes: graph.nodes,
             edges: graph.internalEdges,
@@ -386,11 +405,16 @@ const linksVerifyCommand = Command.make("verify", {
           `${crawlReport.truncatedPages.length} page body/bodies exceeded --max-body-bytes; anchors past the cutoff are missing.`,
         );
       }
+      if ((crawlReport.discoveryFailures?.length ?? 0) > 0 || crawlReport.sitemapTruncated === true) {
+        warnings.push("Sitemap or robots discovery was incomplete; rendered coverage cannot be asserted.");
+      }
 
       const analysis = yield* analyzeDeclared(origin, renderedEdges, options.assertCoverage, {
         truncated: crawlReport.truncated,
         bodyTruncated: crawlReport.bodyTruncated,
         failures: crawlReport.failures.length,
+        discoveryFailures: crawlReport.discoveryFailures?.length ?? 0,
+        sitemapTruncated: crawlReport.sitemapTruncated ?? false,
       });
       warnings.push(...analysis.warnings);
       const diff =

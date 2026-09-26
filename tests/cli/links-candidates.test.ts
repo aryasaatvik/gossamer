@@ -94,11 +94,11 @@ describe("pagegraph links candidates", () => {
     const report = JSON.parse(result.stdout) as Report;
     expect(report.kind).toBe("links-candidates");
     expect(report.schemaVersion).toBe(1);
-    expect(report.total).toBe(6);
+    expect(report.total).toBe(7);
     expect(report.truncated).toBe(false);
     expect(report.rendered).toBe(false);
     expect(report.clusters).toEqual([
-      { key: "blog", candidates: 4 },
+      { key: "blog", candidates: 5 },
       { key: "kind:page", candidates: 2 },
     ]);
     expect(report.candidates[0]).toEqual({
@@ -107,9 +107,10 @@ describe("pagegraph links candidates", () => {
       cluster: "blog",
       reason: 'same top-level section "/blog"',
     });
-    // The declared /blog/a → /blog/b pair is excluded in both directions.
+    // The declared /blog/a → /blog/b edge excludes only its direction.
     expect(report.candidates.map((c) => `${c.source}→${c.destination}`)).toEqual([
       "/blog/a→/blog/c",
+      "/blog/b→/blog/a",
       "/blog/b→/blog/c",
       "/blog/c→/blog/a",
       "/blog/c→/blog/b",
@@ -125,7 +126,7 @@ describe("pagegraph links candidates", () => {
     expect(result.status).toBe(0);
     const report = JSON.parse(result.stdout) as Report;
     expect(report.candidates).toHaveLength(2);
-    expect(report.total).toBe(6);
+    expect(report.total).toBe(7);
     expect(report.truncated).toBe(true);
     expect(report.limit).toBe(2);
   });
@@ -133,8 +134,8 @@ describe("pagegraph links candidates", () => {
   it("restricts to a section cluster or a bare kind", () => {
     const directory = configDirectory(CONFIG);
     const bySection = JSON.parse(run(["--cluster", "blog", "--json"], directory).stdout) as Report;
-    expect(bySection.total).toBe(4);
-    expect(bySection.clusters).toEqual([{ key: "blog", candidates: 4 }]);
+    expect(bySection.total).toBe(5);
+    expect(bySection.clusters).toEqual([{ key: "blog", candidates: 5 }]);
 
     const byKind = JSON.parse(run(["--cluster", "page", "--json"], directory).stdout) as Report;
     expect(byKind.total).toBe(2);
@@ -150,7 +151,7 @@ describe("pagegraph links candidates", () => {
     expect(result.status).toBe(0);
     const report = JSON.parse(result.stdout) as Report;
     expect(report.rendered).toBe(true);
-    expect(report.total).toBe(4);
+    expect(report.total).toBe(6);
     expect(report.candidates.map((c) => `${c.source}→${c.destination}`)).not.toContain(
       "/blog/a→/blog/c",
     );
@@ -167,13 +168,25 @@ describe("pagegraph links candidates", () => {
     const report = JSON.parse(
       run(["--rendered", renderedFile, "--json"], directory).stdout,
     ) as Report;
-    expect(report.total).toBe(4);
+    expect(report.total).toBe(6);
     expect(report.candidates.map((c) => `${c.source}→${c.destination}`)).not.toContain(
       "/blog/a→/blog/c",
     );
-    expect(report.candidates.map((c) => `${c.source}→${c.destination}`)).not.toContain(
-      "/blog/c→/blog/a",
-    );
+    expect(report.candidates.map((c) => `${c.source}→${c.destination}`)).toContain("/blog/c→/blog/a");
+  });
+
+  it("keeps nav-only and reverse-direction suggestions from a rendered artifact", () => {
+    const directory = configDirectory(CONFIG);
+    const renderedFile = join(directory, "rendered.json");
+    writeFileSync(renderedFile, JSON.stringify({ edges: [
+      { from: "/blog/a", to: "/blog/c", region: "nav" },
+      { from: "/blog/c", to: "/blog/b", region: "body" },
+    ] }));
+    const report = JSON.parse(run(["--rendered", renderedFile, "--json"], directory).stdout) as Report;
+    const suggestions = report.candidates.map((candidate) => `${candidate.source}→${candidate.destination}`);
+    expect(suggestions).toContain("/blog/a→/blog/c");
+    expect(suggestions).toContain("/blog/b→/blog/c");
+    expect(suggestions).not.toContain("/blog/c→/blog/b");
   });
 
   it("renders the human plan with clusters and reasons", () => {
@@ -181,7 +194,7 @@ describe("pagegraph links candidates", () => {
     const result = run([], directory);
 
     expect(result.status).toBe(0);
-    expect(result.stdout).toContain("6 candidate pair(s)");
+    expect(result.stdout).toContain("7 candidate pair(s)");
     expect(result.stdout).toContain("Clusters:");
     expect(result.stdout).toContain("blog");
     expect(result.stdout).toContain("/blog/a → /blog/c");
