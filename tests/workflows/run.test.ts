@@ -17,6 +17,10 @@ vi.mock("../../src/workflows/prompts/research.md", async () => {
   const { readFile } = await import("node:fs/promises");
   return { default: await readFile(new URL("../../src/workflows/prompts/research.md", import.meta.url), "utf8") };
 });
+vi.mock("../../src/workflows/prompts/action.md", async () => {
+  const { readFile } = await import("node:fs/promises");
+  return { default: await readFile(new URL("../../src/workflows/prompts/action.md", import.meta.url), "utf8") };
+});
 
 const directories: Array<string> = [];
 const git = (root: string, ...args: ReadonlyArray<string>): void => {
@@ -417,7 +421,9 @@ describe("workflow runner", () => {
           },
           close: async () => {},
         }),
-        decide: async () => report(testCase.family),
+        decide: async () => testCase.workflow === "improve.links"
+          ? { ...report(testCase.family), resolved: [{ decisionId: "workflow-links:0", schemaVersion: 1, family: "workflow-links", model: "jev-latest", threshold: 0.7, inputHash: "fixture", inputRef: "/docs/email → /pricing", verdict: "add", review: false, answers: {} }] }
+          : report(testCase.family),
       },
     );
 
@@ -429,5 +435,170 @@ describe("workflow runner", () => {
       outcome: "applied",
     });
     expect(readFileSync(join(root, testCase.file), "utf8")).toBe(testCase.after);
+  });
+
+  it.each(["skip", "review"])("never opens an edit turn for %s link suggestions", async (verdict) => {
+    const { root, graph, config } = fixture();
+    graph.nodes.set("/docs/email", { path: "/docs/email", kind: "page", source: "route", policy: { kind: "page", sitemap: { priority: 0.5, changeFrequency: "monthly" } } });
+    const suggestion = { source: "/docs/email", destination: "/pricing", cluster: "kind:page", reason: "same kind; pricing options are relevant", sentence: "See the pricing options for transactional email teams.", anchor: "pricing options", targetSentence: "Pricing options include usage based plans for teams.", score: 4, scores: { topical: 2, rarity: 1, inboundNeed: 1, graph: 0.5 } };
+    const path = join(root, "suggestions.json");
+    writeFileSync(path, JSON.stringify({ kind: "links-candidates", schemaVersion: 2, origin: config.origin, limit: 1, pageLimit: 2, maxBodyBytes: 3_000_000, total: 1, truncated: false, skipped: [], candidates: [suggestion] }));
+    git(root, "add", "suggestions.json"); git(root, "commit", "-m", "add suggestions");
+    const state = { summary: "One candidate", items: [{ from: suggestion.source, to: suggestion.destination, anchor: suggestion.anchor, context: suggestion.sentence, relation: "pricing" }] };
+    let continued = false;
+    const result = await runWorkflow({ config, graph, root, workflow: "improve.links", options: { ...options, limit: 2, suggestions: path } }, {
+      acquireHost: async () => ({
+        model: { provider: "test", id: "model" },
+        research: async (prompt) => { expect(prompt).toContain(suggestion.sentence); return { state, sessionId: "links", transcript: {}, executor: executorEvidence }; },
+        continue: async () => { continued = true; throw new Error("edit turn opened"); },
+        close: async () => {},
+      }),
+      decide: async () => ({ ...report("workflow-links"), resolved: verdict === "skip" ? [{ decisionId: "workflow-links:0", schemaVersion: 1, family: "workflow-links", model: "jev-latest", threshold: 0.7, inputHash: "fixture", inputRef: "/docs/email → /pricing", verdict, review: false, answers: {} }] : [], review: verdict === "review" ? [{ decisionId: "workflow-links:0", schemaVersion: 1, family: "workflow-links", model: "jev-latest", threshold: 0.7, inputHash: "fixture", inputRef: "/docs/email → /pricing", verdict, review: true, answers: {} }] : [] }),
+    });
+    expect(continued).toBe(false);
+    expect(result.run.result).toMatchObject({ outcome: "no-change" });
+    expect(result.run.evidence.suggestions?.candidates[0]).toMatchObject({ sentence: suggestion.sentence, anchor: suggestion.anchor });
+    expect(result.run.changes.files).toEqual([]);
+  });
+
+  it("rejects a wrong-origin suggestion before acquiring a host", async () => {
+    const { root, graph, config } = fixture();
+    const path = join(root, "wrong.json");
+    writeFileSync(path, JSON.stringify({ kind: "links-candidates", schemaVersion: 2, origin: "https://other.example", candidates: [] }));
+    git(root, "add", "wrong.json"); git(root, "commit", "-m", "add wrong suggestions");
+    let acquired = false;
+    await expect(runWorkflow({ config, graph, root, workflow: "improve.links", options: { ...options, suggestions: path } }, {
+      acquireHost: async () => { acquired = true; throw new Error("host acquired"); },
+    })).rejects.toThrow("Expected schema-version-2 suggestions");
+    expect(acquired).toBe(false);
+  });
+
+  it("rejects suggestions outside --page targets before acquiring a host", async () => {
+    const { root, graph, config } = fixture();
+    graph.nodes.set("/docs/email", { path: "/docs/email", kind: "page", source: "route", policy: { kind: "page", sitemap: { priority: 0.5, changeFrequency: "monthly" } } });
+    const path = join(root, "suggestions.json");
+    writeFileSync(path, JSON.stringify({ kind: "links-candidates", schemaVersion: 2, origin: config.origin, limit: 1, pageLimit: 2, maxBodyBytes: 3_000_000, total: 1, truncated: false, skipped: [], candidates: [{ source: "/docs/email", destination: "/pricing", cluster: "kind:page", reason: "same kind", sentence: "See the pricing options for transactional email teams.", anchor: "pricing options", targetSentence: "Pricing options include usage based plans for teams.", score: 4, scores: { topical: 2, rarity: 1, inboundNeed: 1, graph: 0.5 } }] }));
+    git(root, "add", "suggestions.json"); git(root, "commit", "-m", "add suggestions");
+    let acquired = false;
+    await expect(runWorkflow({ config, graph, root, workflow: "improve.links", options: { ...options, pages: ["/pricing"], suggestions: path } }, {
+      acquireHost: async () => { acquired = true; throw new Error("host acquired"); },
+    })).rejects.toThrow("outside workflow page/kind/limit targets");
+    expect(acquired).toBe(false);
+  });
+
+  it("blocks an accepted edit when served suggestion copy has changed", async () => {
+    const { root, graph, config } = fixture();
+    graph.nodes.set("/docs/email", { path: "/docs/email", kind: "page", source: "route", policy: { kind: "page", sitemap: { priority: 0.5, changeFrequency: "monthly" } } });
+    const candidate = { source: "/docs/email", destination: "/pricing", cluster: "kind:page", reason: "same kind", sentence: "See the pricing options for transactional email teams.", anchor: "pricing options", targetSentence: "Pricing options include usage based plans for teams.", score: 4, scores: { topical: 2, rarity: 1, inboundNeed: 1, graph: 0.5 } };
+    const path = join(root, "suggestions.json");
+    writeFileSync(path, JSON.stringify({ kind: "links-candidates", schemaVersion: 2, origin: config.origin, limit: 1, pageLimit: 2, maxBodyBytes: 3_000_000, total: 1, truncated: false, skipped: [], candidates: [candidate] }));
+    git(root, "add", "suggestions.json"); git(root, "commit", "-m", "add suggestions");
+    let continued = false;
+    await expect(runWorkflow({ config, graph, root, workflow: "improve.links", options: { ...options, limit: 2, suggestions: path } }, {
+      acquireHost: async () => ({
+        model: { provider: "test", id: "model" },
+        research: async () => ({ state: { summary: "One suggestion", items: [{ from: candidate.source, to: candidate.destination, anchor: candidate.anchor, context: candidate.sentence, relation: "plans" }] }, sessionId: "links", transcript: {}, executor: executorEvidence }),
+        continue: async () => { continued = true; throw new Error("edit turn opened"); },
+        close: async () => {},
+      }),
+      decide: async () => ({ ...report("workflow-links"), resolved: [{ decisionId: "workflow-links:0", schemaVersion: 1, family: "workflow-links", model: "jev-latest", threshold: 0.7, inputHash: "fixture", inputRef: "/docs/email → /pricing", verdict: "add", review: false, answers: {} }] }),
+      readSuggestionSentences: async (_origin, page, _allowPrivate, maxBodyBytes) => {
+        expect(maxBodyBytes).toBe(3_000_000);
+        return page === candidate.source ? ["The source page no longer mentions plans."] : [candidate.targetSentence];
+      },
+    })).rejects.toThrow("Suggestion is stale");
+    expect(continued).toBe(false);
+  });
+
+  it("passes only the accepted item when links share the same source and target", async () => {
+    const { root, graph, config } = fixture();
+    const accepted = { from: "/docs/email", to: "/pricing", anchor: "pricing options", context: "See pricing options for teams.", relation: "plans" };
+    const rejected = { ...accepted, anchor: "cheap offers", context: "Find cheap offers today." };
+    let actionPrompt = "";
+    await runWorkflow({ config, graph, root, workflow: "improve.links", options }, {
+      acquireHost: async () => ({
+        model: { provider: "test", id: "model" },
+        research: async () => ({ state: { summary: "Two proposals", items: [accepted, rejected] }, sessionId: "links", transcript: {}, executor: executorEvidence }),
+        continue: async (_sessionId, prompt) => { actionPrompt = prompt; return { state: { summary: "One edit", files: [], outcome: "applied" }, sessionId: "links", transcript: {}, executor: executorEvidence }; },
+        close: async () => {},
+      }),
+      decide: async () => ({ ...report("workflow-links"), resolved: [{ decisionId: "workflow-links:0", schemaVersion: 1, family: "workflow-links", model: "jev-latest", threshold: 0.7, inputHash: "fixture", inputRef: "/docs/email → /pricing", verdict: "add", review: false, answers: {} }],
+        review: [{ decisionId: "workflow-links:1", schemaVersion: 1, family: "workflow-links", model: "jev-latest", threshold: 0.7, inputHash: "fixture", inputRef: "/docs/email → /pricing", verdict: "review", review: true, answers: {} }] }),
+    });
+    expect(actionPrompt).toContain(accepted.anchor);
+    expect(actionPrompt).not.toContain(rejected.anchor);
+  });
+
+  it("keeps an accepted suggestion read-only in dry-run mode", async () => {
+    const { root, graph, config } = fixture();
+    const item = { from: "/docs/email", to: "/pricing", anchor: "pricing options", context: "See pricing options for teams.", relation: "plans" };
+    let continued = false;
+    const result = await runWorkflow({ config, graph, root, workflow: "improve.links", options: { ...options, dryRun: true } }, {
+      acquireHost: async () => ({
+        model: { provider: "test", id: "model" },
+        research: async () => ({ state: { summary: "One proposal", items: [item] }, sessionId: "links", transcript: {}, executor: executorEvidence }),
+        continue: async (_sessionId, prompt, workflowOptions) => {
+          continued = true;
+          expect(prompt).toContain("Do not edit files");
+          expect(workflowOptions.permissions).toEqual(expect.arrayContaining([expect.objectContaining({ action: "edit", effect: "deny" })]));
+          return { state: { summary: "Preview", files: [], outcome: "dry-run" }, sessionId: "links", transcript: {}, executor: executorEvidence };
+        },
+        close: async () => {},
+      }),
+      decide: async () => ({ ...report("workflow-links"), resolved: [{ decisionId: "workflow-links:0", schemaVersion: 1, family: "workflow-links", model: "jev-latest", threshold: 0.7, inputHash: "fixture", inputRef: "/docs/email → /pricing", verdict: "add", review: false, answers: {} }] }),
+    });
+    expect(continued).toBe(true);
+    expect(result.run.changes.files).toEqual([]);
+  });
+
+  it("repairs a schema-invalid research state before decisions or an edit turn", async () => {
+    const { root, graph, config } = fixture();
+    let turns = 0;
+    let decisions = 0;
+    const result = await runWorkflow({ config, graph, root, workflow: "improve.links", options: { ...options, dryRun: true } }, {
+      acquireHost: async () => ({
+        model: { provider: "test", id: "model" },
+        research: async () => ({ state: { items: [] }, sessionId: "links", transcript: { messages: ["original"] }, executor: executorEvidence }),
+        continue: async (_sessionId, prompt, workflowOptions) => {
+          turns++;
+          expect(prompt).toContain("summary");
+          expect(workflowOptions.permissions).toEqual(expect.arrayContaining([expect.objectContaining({ action: "edit", effect: "deny" })]));
+          return { state: { summary: "No grounded link proposals.", items: [] }, sessionId: "links", transcript: { messages: ["repair"] }, executor: executorEvidence };
+        },
+        close: async () => {},
+      }),
+      decide: async () => { decisions++; return { ...report("workflow-links"), counts: { inputs: 0, resolved: 0, review: 0 } }; },
+    });
+    expect(turns).toBe(1);
+    expect(decisions).toBe(1);
+    expect(result.run.changes.files).toEqual([]);
+    const checkpoint = JSON.parse(readFileSync(join(result.directory, "research.json"), "utf8"));
+    expect(checkpoint.state.summary).toBe("No grounded link proposals.");
+  });
+
+  it("preserves a failed research repair and never asks for decisions or edits", async () => {
+    const { root, graph, config } = fixture();
+    let turns = 0;
+    let decisions = 0;
+    await expect(runWorkflow({ config, graph, root, workflow: "improve.links", options }, {
+      acquireHost: async () => ({
+        model: { provider: "test", id: "model" },
+        research: async () => ({ state: { items: [] }, sessionId: "links", transcript: { messages: ["original"] }, executor: executorEvidence }),
+        continue: async (_sessionId, _prompt, workflowOptions) => {
+          turns++;
+          expect(workflowOptions.permissions).toEqual(expect.arrayContaining([expect.objectContaining({ action: "edit", effect: "deny" })]));
+          return { state: { items: [] }, sessionId: "links", transcript: { messages: ["invalid repair"] }, executor: executorEvidence };
+        },
+        close: async () => {},
+      }),
+      decide: async () => { decisions++; throw new Error("decisions must not run"); },
+    })).rejects.toThrow("Research failure artifact:");
+    expect(turns).toBe(1);
+    expect(decisions).toBe(0);
+    const runDirectory = join(root, ".pagegraph/runs", readdirSync(join(root, ".pagegraph/runs"))[0]!);
+    const failure = JSON.parse(readFileSync(join(runDirectory, "research-failure.json"), "utf8"));
+    expect(failure.original.transcript.messages).toEqual(["original"]);
+    expect(failure.repaired.transcript.messages).toEqual(["invalid repair"]);
+    expect(existsSync(join(runDirectory, "research.json"))).toBe(false);
   });
 });

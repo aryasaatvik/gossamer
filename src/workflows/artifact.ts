@@ -62,3 +62,16 @@ export const writeResearchCheckpoint = (
   writeFileSync(path, `${JSON.stringify(checkpoint, null, 2)}\n`, "utf8");
   return path;
 };
+
+export const writeResearchFailure = (
+  root: string,
+  runsDirectory: string,
+  id: string,
+  details: unknown,
+): string => {
+  const directory = resolve(root, runsDirectory, id);
+  mkdirSync(directory, { recursive: true });
+  const path = resolve(directory, "research-failure.json");
+  writeFileSync(path, `${JSON.stringify(details, null, 2)}\n`, "utf8");
+  return path;
+};

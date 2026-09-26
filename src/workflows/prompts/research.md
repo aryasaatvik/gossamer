@@ -5,6 +5,8 @@ You are running PageGraph's {{workflow}} workflow.
 Use these skills: {{skills}}. Treat the supplied project evidence as the deterministic baseline.
 The graph contains the selected target pages. Its neighborhood preserves incoming and outgoing
 relationships to pages outside that selection; those neighbors are context, not additional targets.
+When suggestion evidence is supplied, preserve each candidate's exact source sentence as `context`,
+verbatim anchor, source and destination paths. Do not invent additional link placements.
 Return at most {{limit}} items or opportunities. Keep exploration scoped to these targets and stop
 when the collected evidence supports the requested decision; do not expand into a site-wide audit.
 

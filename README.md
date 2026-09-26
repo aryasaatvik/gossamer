@@ -531,6 +531,43 @@ pagegraph links candidates --rendered rendered.json --json | jq
 pagegraph improve links --page "/docs/**"
 ```
 
+For content-backed placements, opt in to a bounded same-origin probe. The configured
+`origin` must match `--site`. Each schema-version-2 result carries a sentence
+from served main content, an exact anchor phrase inside it, a target sentence,
+and score components. Unreadable and over-limit pages are reported as skipped.
+Code samples and tabular comparisons are excluded. An anchor is proposed only
+when its distinct content words occur together in a target sentence, so review
+the placement and its context before editing. Repeated passages and clause
+fragments are excluded; named destinations require a destination-specific anchor.
+The home and about pages are omitted as destinations because site navigation already leads there.
+The pair-only command above remains offline and emits schema version 1.
+The page budget selects low-inbound candidate pairs first. Use repeatable
+`--target /exact/path` to put a known weak destination within the budget. Add
+`--source /exact/path` when you have a likely source and want to guarantee the
+pair is probed even on a large site; raise `--page-limit` for more pairs.
+For a site with many legal, comparison, or other low-inbound pages, use
+`--cluster blog` (or another section) to spend the same page budget on an
+editorial cluster. A zero-result broad probe means no placement passed the
+evidence rules within its selected pages; it does not mean the whole site has
+no possible links.
+
+```bash
+pagegraph links verify https://example.com --json
+pagegraph links candidates --site https://example.com --page-limit 25 --json > /tmp/pagegraph-suggestions.json
+pagegraph links candidates --site https://example.com --cluster blog --page-limit 25 --json
+pagegraph links candidates --site https://example.com --source /blog/guide --target /blog/weak --page-limit 25 --json > /tmp/pagegraph-suggestions.json
+pagegraph improve links --suggestions /tmp/pagegraph-suggestions.json --dry-run
+pagegraph improve links --suggestions /tmp/pagegraph-suggestions.json
+```
+
+`improve links` validates the artifact against the configured origin and graph,
+then asks Jev to judge the suggested placements. Only accepted `add` or `update`
+decisions can open an edit turn; skipped and review-band links remain in the run
+artifact without authorizing an edit. Before an accepted edit, Pagegraph checks
+that the source sentence and target passage still occur in served copy. Regenerate
+the artifact if either page changed. For a local site, pass `--allow-private` to
+both `links candidates --site` and `improve links --suggestions`.
+
 ### Contextual-link coverage
 
 Declare a contextual-link coverage policy in `seo.config.ts` (a `coverage` array

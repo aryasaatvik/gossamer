@@ -1,14 +1,20 @@
 import * as Command from "effect/unstable/cli/Command";
+import * as Flag from "effect/unstable/cli/Flag";
 
 import {
   allowDirtyFlag,
   baseFlags,
   dryRunFlag,
   queryFlag,
+  suggestionsFlag,
   workflowCommand,
 } from "./research";
 
 const writeFlags = { dryRun: dryRunFlag, allowDirty: allowDirtyFlag };
+const allowPrivateFlag = Flag.Boolean("allow-private").pipe(
+  Flag.withDescription("Allow localhost/private site probes for suggestion freshness (local development only)"),
+  Flag.withDefault(false),
+);
 
 /** File-writing content, metadata, schema, and link workflows. */
 export const improveCommandGroup = Command.make("improve").pipe(
@@ -58,6 +64,8 @@ export const improveCommandGroup = Command.make("improve").pipe(
       description: "Add contextual internal links and update PageGraph declarations when appropriate",
       flags: {
         ...baseFlags,
+        suggestions: suggestionsFlag,
+        allowPrivate: allowPrivateFlag,
         dryRun: writeFlags.dryRun,
         allowDirty: writeFlags.allowDirty,
       },
