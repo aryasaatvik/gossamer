@@ -96,7 +96,7 @@ const xmlText = (value: string): string =>
     return String.fromCodePoint(numeric);
   });
 
-const robotsRules = (body: string): { readonly rules: ReadonlyArray<{ path: string; allow: boolean }>; readonly sitemaps: ReadonlyArray<string> } => {
+export const robotsRules = (body: string): { readonly rules: ReadonlyArray<{ path: string; allow: boolean }>; readonly sitemaps: ReadonlyArray<string> } => {
   const groups: Array<{ agents: Array<string>; rules: Array<{ path: string; allow: boolean }> }> = [];
   const sitemaps: Array<string> = [];
   let group: { agents: Array<string>; rules: Array<{ path: string; allow: boolean }> } | undefined;
@@ -129,7 +129,7 @@ const robotsRules = (body: string): { readonly rules: ReadonlyArray<{ path: stri
   return { rules, sitemaps };
 };
 
-const allowedByRobots = (path: string, rules: ReadonlyArray<{ path: string; allow: boolean }>): boolean => {
+export const allowedByRobots = (path: string, rules: ReadonlyArray<{ path: string; allow: boolean }>): boolean => {
   let chosen: { path: string; allow: boolean } | undefined;
   let bestLength = -1;
   for (const rule of rules) {

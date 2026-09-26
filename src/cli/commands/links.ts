@@ -6,7 +6,7 @@ import * as Flag from "effect/unstable/cli/Flag";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 
-import { crawlRenderedPages } from "../../audit/crawl";
+import { allowedByRobots, crawlRenderedPages, robotsRules } from "../../audit/crawl";
 import { probeHttp } from "../../audit/scanners/http";
 import { checkRenderedCoverage, type CoverageRule, type Violation } from "../../core/checks";
 import { decodeRenderedEdges, generateLinkCandidates } from "../../core/link-candidates";
@@ -576,9 +576,18 @@ const linksCandidatesCommand = Command.make("candidates", {
             const nodes = [...graph.nodes.values()].filter(isSitemapEligible).sort((a, b) => a.path.localeCompare(b.path));
             const selected = nodes.slice(0, pageLimit);
             const skipped: Array<{ path: string; reason: string }> = nodes.slice(pageLimit).map((node) => ({ path: node.path, reason: "page limit" }));
+            const robots = await probeHttp({ kind: "robots", method: "GET", accept: "text/plain", url: new URL("/robots.txt", configured) }, {
+              sameOrigin: configured.origin, allowPrivate: options.allowPrivate, timeoutMs: options.requestTimeoutMs,
+              maxBodyBytes: options.maxBodyBytes, captureBody: true,
+            });
+            if ((!robots.ok && robots.status !== 404) || robots.bodyTruncated) {
+              throw new Error("Could not establish complete robots policy for the site");
+            }
+            const rules = robots.ok ? robotsRules(robots.body ?? "").rules : [];
             const pages: Array<{ path: string; sentences: ReadonlyArray<string> }> = [];
             const observed: Array<{ from: string; to: string; region: "nav" | "header" | "footer" | "body" }> = [];
             for (const node of selected) {
+              if (!allowedByRobots(node.path, rules)) { skipped.push({ path: node.path, reason: "robots disallow" }); continue; }
               const url = new URL(node.path, configured);
               const probe = await probeHttp({ kind: "page-html", method: "GET", accept: "text/html", url }, {
                 sameOrigin: configured.origin,
@@ -600,7 +609,10 @@ const linksCandidatesCommand = Command.make("candidates", {
                 observed.push({ from: node.path, to: new URL(anchor.href).pathname.replace(/\/+$/, "") || "/", region: anchor.region });
               }
             }
-            const pairs = generateLinkCandidates(graph, { clusters: options.cluster, limit: Number.MAX_SAFE_INTEGER, renderedEdges: [...renderedEdges, ...observed] }).candidates;
+            const selectedPaths = new Set(pages.map((page) => page.path));
+            const scopedGraph = { ...graph, nodes: new Map([...graph.nodes].filter(([path]) => selectedPaths.has(path))),
+              edges: graph.edges.filter((edge) => selectedPaths.has(edge.from) && selectedPaths.has(edge.to)) };
+            const pairs = generateLinkCandidates(scopedGraph, { clusters: options.cluster, limit: Number.MAX_SAFE_INTEGER, renderedEdges: [...renderedEdges, ...observed] }).candidates;
             const inbound = new Map<string, number>();
             for (const edge of [...graph.edges.filter((edge) => edge.type === "related"), ...observed.filter((edge) => edge.region === "body")]) {
               inbound.set(edge.to, (inbound.get(edge.to) ?? 0) + 1);
