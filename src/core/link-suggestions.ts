@@ -203,11 +203,14 @@ export const rankLinkSuggestions = (
   for (const pair of pairs) {
     const source = byPath.get(pair.source);
     const target = byPath.get(pair.destination);
-    if (!source || !target) continue;
-    const destinationSlug = pair.destination.split("/").filter(Boolean).at(-1) ?? "";
+    if (!source || !target || pair.destination === "/") continue;
+    const destinationSegments = pair.destination.split("/").filter(Boolean);
+    const destinationSlug = destinationSegments.at(-1) ?? "";
     const destinationTerms = words(destinationSlug.replace(/[-_]/g, " "));
-    const namedDestination = destinationTerms.filter((term) => term.length <= 3
-      || target.sentences.some((sentence) => new RegExp(`\\b${term[0]!.toUpperCase()}${term.slice(1)}\\b`).test(sentence)));
+    const siblingPolicyOrComparison = destinationSegments.length >= 2 && ["compare", "legal"].includes(destinationSegments[0]!);
+    const namedDestination = destinationTerms.filter((term) => siblingPolicyOrComparison || term.length <= 3
+      || target.sentences.some((sentence) => [...sentence.matchAll(/\b[A-Z][A-Za-z0-9]*\b/g)]
+        .some((match) => match[0].toLowerCase() === term)));
     const targetPassages = target.sentences.map((sentence) => ({ sentence, terms: new Set(words(sentence)) }));
     const targetByTerm = new Map<string, Array<number>>();
     targetPassages.forEach((passage, index) => {
@@ -228,6 +231,7 @@ export const rankLinkSuggestions = (
         const passageIndex = possible.find((index) => anchorTerms.every((term) => targetPassages[index]!.terms.has(term)));
         if (passageIndex === undefined) continue;
         const passage = targetPassages[passageIndex]!;
+        if (sentence.toLowerCase().replace(/\s+/g, " ").trim() === passage.sentence.toLowerCase().replace(/\s+/g, " ").trim()) continue;
         const sourceTerms = new Set(words(sentence));
         const overlap = [...sourceTerms].filter((term) => passage.terms.has(term)).length;
         if (overlap >= 6 && overlap / Math.min(sourceTerms.size, passage.terms.size) >= 0.7) continue;

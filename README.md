@@ -528,6 +528,7 @@ Code samples and tabular comparisons are excluded. An anchor is proposed only
 when its distinct content words occur together in a target sentence, so review
 the placement and its context before editing. Repeated passages and clause
 fragments are excluded; named destinations require a destination-specific anchor.
+The home page is omitted as a destination because site navigation already leads there.
 The pair-only command above remains offline and emits schema version 1.
 The page budget selects low-inbound candidate pairs first. Use repeatable
 `--target /exact/path` to put a known weak destination within the budget. Add

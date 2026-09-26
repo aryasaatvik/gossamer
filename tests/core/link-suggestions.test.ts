@@ -78,6 +78,9 @@ describe("content-backed link suggestions", () => {
     const comparison = { source: "/compare/sendgrid", destination: "/compare/mailgun", cluster: "compare", reason: "same section" };
     expect(rankLinkSuggestions([comparison], [{ path: comparison.source, sentences: [repeated] },
       { path: comparison.destination, sentences: [repeated] }], new Map(), 10).total).toBe(0);
+    const shortRepeat = "Pricing verified September 19, 2026.";
+    expect(rankLinkSuggestions([comparison], [{ path: comparison.source, sentences: [shortRepeat] },
+      { path: comparison.destination, sentences: [shortRepeat] }], new Map(), 10).total).toBe(0);
 
     const generic = "Teams send from many languages with official libraries.";
     const named = { ...comparison, destination: "/compare/postmark" };
@@ -87,6 +90,9 @@ describe("content-backed link suggestions", () => {
     const specific = "Postmark transactional streams keep broadcasts separate for teams.";
     expect(rankLinkSuggestions([named], [{ path: named.source, sentences: [specific] },
       { path: named.destination, sentences: target }], new Map(), 10).candidates[0]?.anchor).toContain("Postmark");
+    const sendGrid = { ...comparison, source: "/compare/postmark", destination: "/compare/sendgrid" };
+    expect(rankLinkSuggestions([sendGrid], [{ path: sendGrid.source, sentences: [generic] },
+      { path: sendGrid.destination, sentences: ["SendGrid supports many languages with official libraries."] }], new Map(), 10).total).toBe(0);
   });
 
   it("does not use legal clause fragments or unfinished list items", () => {
@@ -95,6 +101,12 @@ describe("content-backed link suggestions", () => {
     const policy = { source: "/legal/privacy", destination: "/legal/dpa", cluster: "legal", reason: "same section" };
     expect(rankLinkSuggestions([policy], [{ path: policy.source, sentences: [legal] },
       { path: policy.destination, sentences: [target] }], new Map(), 10).total).toBe(0);
+    const cookies = { ...policy, source: "/legal/sla", destination: "/legal/cookies" };
+    expect(rankLinkSuggestions([cookies], [{ path: cookies.source, sentences: ["This SLA applies to each account using Samva Services."] },
+      { path: cookies.destination, sentences: ["Samva links product usage to a user account under a separate permission."] }], new Map(), 10).total).toBe(0);
+    const home = { ...policy, source: "/contact", destination: "/" };
+    expect(rankLinkSuggestions([home], [{ path: home.source, sentences: ["Preparing security verification."] },
+      { path: home.destination, sentences: ["Preparing security verification."] }], new Map(), 10).total).toBe(0);
     expect(extractPageSentences("<main><li>use the Services for protected health information; or</li></main>")).toEqual([]);
   });
 
