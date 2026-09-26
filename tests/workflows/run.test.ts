@@ -550,4 +550,55 @@ describe("workflow runner", () => {
     expect(continued).toBe(true);
     expect(result.run.changes.files).toEqual([]);
   });
+
+  it("repairs a schema-invalid research state before decisions or an edit turn", async () => {
+    const { root, graph, config } = fixture();
+    let turns = 0;
+    let decisions = 0;
+    const result = await runWorkflow({ config, graph, root, workflow: "improve.links", options: { ...options, dryRun: true } }, {
+      acquireHost: async () => ({
+        model: { provider: "test", id: "model" },
+        research: async () => ({ state: { items: [] }, sessionId: "links", transcript: { messages: ["original"] }, executor: executorEvidence }),
+        continue: async (_sessionId, prompt, workflowOptions) => {
+          turns++;
+          expect(prompt).toContain("summary");
+          expect(workflowOptions.permissions).toEqual(expect.arrayContaining([expect.objectContaining({ action: "edit", effect: "deny" })]));
+          return { state: { summary: "No grounded link proposals.", items: [] }, sessionId: "links", transcript: { messages: ["repair"] }, executor: executorEvidence };
+        },
+        close: async () => {},
+      }),
+      decide: async () => { decisions++; return { ...report("workflow-links"), counts: { inputs: 0, resolved: 0, review: 0 } }; },
+    });
+    expect(turns).toBe(1);
+    expect(decisions).toBe(1);
+    expect(result.run.changes.files).toEqual([]);
+    const checkpoint = JSON.parse(readFileSync(join(result.directory, "research.json"), "utf8"));
+    expect(checkpoint.state.summary).toBe("No grounded link proposals.");
+  });
+
+  it("preserves a failed research repair and never asks for decisions or edits", async () => {
+    const { root, graph, config } = fixture();
+    let turns = 0;
+    let decisions = 0;
+    await expect(runWorkflow({ config, graph, root, workflow: "improve.links", options }, {
+      acquireHost: async () => ({
+        model: { provider: "test", id: "model" },
+        research: async () => ({ state: { items: [] }, sessionId: "links", transcript: { messages: ["original"] }, executor: executorEvidence }),
+        continue: async (_sessionId, _prompt, workflowOptions) => {
+          turns++;
+          expect(workflowOptions.permissions).toEqual(expect.arrayContaining([expect.objectContaining({ action: "edit", effect: "deny" })]));
+          return { state: { items: [] }, sessionId: "links", transcript: { messages: ["invalid repair"] }, executor: executorEvidence };
+        },
+        close: async () => {},
+      }),
+      decide: async () => { decisions++; throw new Error("decisions must not run"); },
+    })).rejects.toThrow("Research failure artifact:");
+    expect(turns).toBe(1);
+    expect(decisions).toBe(0);
+    const runDirectory = join(root, ".pagegraph/runs", readdirSync(join(root, ".pagegraph/runs"))[0]!);
+    const failure = JSON.parse(readFileSync(join(runDirectory, "research-failure.json"), "utf8"));
+    expect(failure.original.transcript.messages).toEqual(["original"]);
+    expect(failure.repaired.transcript.messages).toEqual(["invalid repair"]);
+    expect(existsSync(join(runDirectory, "research.json"))).toBe(false);
+  });
 });

@@ -12,14 +12,14 @@ import { probeHttp } from "../audit/scanners/http";
 import type { SeoGraph } from "../core/graph";
 import { decodeLinksSuggestionReport, extractPageSentences } from "../core/link-suggestions";
 import type { DecisionBatchReport } from "../decide/record";
-import { createRunId, writeResearchCheckpoint, writeRunBundle } from "./artifact";
+import { createRunId, writeResearchCheckpoint, writeResearchFailure, writeRunBundle } from "./artifact";
 import { getWorkflowSpec } from "./catalog";
 import { collectWorkflowEvidence, selectGraph } from "./evidence";
 import { changedFiles, inspectGit } from "./git";
 import type { WorkflowMutationPolicy } from "./mutation";
 import { createWorkflowMutationPolicy, repositoryMutationPermissionRules } from "./mutation";
 import type { WorkflowId, WorkflowResearchCheckpointV1, WorkflowRunV1, WorkflowTargetOptions } from "./model";
-import type { WorkflowHost } from "./opencode";
+import type { WorkflowHost, WorkflowHostResult } from "./opencode";
 import { acquireWorkflowHost } from "./opencode";
 import actionPromptSource from "./prompts/action.md" with { type: "text" };
 import researchPromptSource from "./prompts/research.md" with { type: "text" };
@@ -196,18 +196,40 @@ export const runWorkflow = async (
       spec.mutatesFiles && !input.options.dryRun
         ? mutation.sessionPermissions
         : researchPermissions;
-    const researched = await host.research(researchPrompt(spec, suppliedEvidence, input.options), {
+    let researched = await host.research(researchPrompt(spec, suppliedEvidence, input.options), {
       skills: spec.skills,
       permissions: researchPermissions,
     });
-    const gitAfterResearch = inspectGit(input.root);
-    const researchFiles = changedFiles(gitAtStart, gitAfterResearch);
-    if (researchFiles.length > 0) {
-      throw new Error(
-        `${spec.id} changed repository files during its read-only research turn: ${researchFiles.join(", ")}`,
-      );
+    const assertResearchReadOnly = (): void => {
+      const researchFiles = changedFiles(gitAtStart, inspectGit(input.root));
+      if (researchFiles.length > 0) throw new Error(`${spec.id} changed repository files during its read-only research turn: ${researchFiles.join(", ")}`);
+    };
+    assertResearchReadOnly();
+    const decodeResearchState = (value: unknown) => spec.decodeState(capState(value, input.options.limit));
+    let state: ReturnType<typeof decodeResearchState>;
+    try {
+      state = decodeResearchState(researched.state);
+    } catch (firstError) {
+      const original = researched;
+      let repaired: WorkflowHostResult | undefined;
+      try {
+        repaired = await host.continue(researched.sessionId, [
+          `The previous ${spec.id} research JSON did not match the required state schema: ${firstError instanceof Error ? firstError.message : String(firstError)}.`,
+          `Return only one corrected JSON object matching this schema: ${JSON.stringify(spec.stateJsonSchema)}.`,
+          "Use only evidence already collected. Do not call tools, edit files, or add commentary.",
+        ].join(" "), { skills: spec.skills, permissions: researchPermissions });
+        assertResearchReadOnly();
+        state = decodeResearchState(repaired.state);
+        researched = repaired;
+      } catch (repairError) {
+        const runsDirectory = input.out ?? workflows.runsDirectory ?? ".pagegraph/runs";
+        const path = writeResearchFailure(input.root, runsDirectory, id, {
+          kind: "pagegraph-workflow-research-failure", workflow: spec.id, original,
+          repaired, firstError: String(firstError), repairError: String(repairError),
+        });
+        throw new Error(`${spec.id} research state failed schema validation after one read-only repair. Research failure artifact: ${path}`, { cause: repairError });
+      }
     }
-    const state = spec.decodeState(capState(researched.state, input.options.limit));
     const decisionInputs = spec.decisionInputs(state);
     if (suggestionReport !== undefined) {
       const valid = new Set(suggestionReport.candidates.map((item) => `${item.source}\u0000${item.destination}\u0000${item.anchor}\u0000${item.sentence}`));
