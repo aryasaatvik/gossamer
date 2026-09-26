@@ -15,7 +15,7 @@ Read the app's lockfile, route files, and `seo.config.ts` before editing. Use it
 4. Add `seo.config.ts` with `defineSeoConfig` and `viteGraphLoader` when the app needs CLI graph, sitemap, robots, or CI projections. The route tree and `staticData.seo` remain the declarations.
 5. Run `pagegraph check` for declared-graph violations. Inspect served HTML separately with `pagegraph inspect <url> --live` or a focused rendered-head test. A green graph check does not prove the deployed head.
 
-For the full option surface, see the installed Pagegraph package's `README.md` sections **Quick start**, **Coverage gate**, and **CLI graph**. Check the consuming app's installed Pagegraph version before copying an option.
+For the full option surface, see the installed Pagegraph package's `README.md` sections **Quick start**, **Coverage gate (Vite)**, and **CLI**. Check the consuming app's installed Pagegraph version before copying an option.
 
 ## Minimal route integration
 
@@ -43,11 +43,11 @@ export const { seoHead } = createSeo({
 ```
 
 ```tsx
-// src/routes/pricing.tsx
+// src/routes/(marketing)/pricing.tsx
 import { createFileRoute } from "@tanstack/react-router";
-import { seoHead } from "../lib/seo";
+import { seoHead } from "../../lib/seo";
 
-export const Route = createFileRoute("/pricing")({
+export const Route = createFileRoute("/(marketing)/pricing")({
   staticData: {
     seo: {
       kind: "page",
@@ -63,7 +63,7 @@ export const Route = createFileRoute("/pricing")({
 });
 ```
 
-Check `SeoConfig` in the consuming app's installed types for version-specific changes. Add `related` and `link` declarations only where contextual links are actually rendered.
+Check `SeoConfig` in the consuming app's installed types for version-specific changes. Declare `related` only for contextual links the source route renders. A route targeted by a `related` link needs `link: { title, description }` metadata for its card; content-instance targets use frontmatter instead.
 
 ## Optional coverage and graph
 
@@ -87,7 +87,7 @@ export default defineConfig({
 });
 ```
 
-`outputPath` must be absolute. For sitemap, robots, and graph checks, configure `seo.config.ts` with `defineSeoConfig` and `viteGraphLoader` from `pagegraph/config`, then run `pagegraph check`. Read the installed README's CLI graph example before writing the loader path; it depends on the app's source layout.
+`outputPath` must be absolute. For sitemap, robots, and graph checks, configure `seo.config.ts` with `defineSeoConfig` and `viteGraphLoader` from `pagegraph/config`, then run `pagegraph check`. Read the installed README's **CLI** example before writing the loader path; it depends on the app's source layout.
 
 ## Route and document boundaries
 
