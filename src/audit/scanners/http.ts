@@ -169,7 +169,7 @@ export const extractDocumentSignals = (
   contentType: string,
   requestedUrl: URL,
 ): DocumentSignals => {
-  const isHtml = contentType.includes("text/html");
+  const isHtml = contentType.includes("text/html") || contentType.includes("application/xhtml+xml");
   const isMarkdown = contentType.includes("text/markdown");
   const looksJson =
     contentType.includes("json") || requestedUrl.pathname.endsWith(".json");
@@ -309,6 +309,12 @@ export const probeHttp = async (
     let currentUrl = request.url;
     let response: IncomingMessage | null = null;
     for (let redirectCount = 0; redirectCount <= 10; redirectCount += 1) {
+      if (options.sameOrigin !== undefined && currentUrl.origin !== options.sameOrigin) {
+        throw new Error(`Redirected off-origin to ${currentUrl.href}`);
+      }
+      if (options.allowUrl !== undefined && !options.allowUrl(currentUrl)) {
+        throw new Error(`Redirected to robots-disallowed URL ${currentUrl.href}`);
+      }
       response = await requestPinned(currentUrl, request, options);
       headersAt = performance.now();
       const location = response.headers.location;
@@ -331,7 +337,7 @@ export const probeHttp = async (
         : "";
     const body = new TextDecoder().decode(bounded.bytes);
     const anchors =
-      options.captureAnchors === true && contentType.includes("text/html")
+      options.captureAnchors === true && (contentType.includes("text/html") || contentType.includes("application/xhtml+xml"))
         ? extractAnchors(body, currentUrl.href)
         : undefined;
     return {
@@ -359,6 +365,7 @@ export const probeHttp = async (
           : createHash("sha256").update(bounded.bytes).digest("hex"),
       bodyTruncated: bounded.truncated,
       bodyExcerpt: bodyExcerpt(body, contentType),
+      ...(options.captureBody === true ? { body } : {}),
       document:
         body.length === 0
           ? null
@@ -386,6 +393,7 @@ export const probeHttp = async (
       capturedBodySha256: null,
       bodyTruncated: false,
       bodyExcerpt: null,
+      ...(options.captureBody === true ? { body: undefined } : {}),
       document: null,
       error: errorMessage(error),
     };

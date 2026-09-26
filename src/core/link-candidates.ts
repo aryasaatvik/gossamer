@@ -14,7 +14,7 @@
  */
 
 import type { SeoGraph, SeoNode } from "./graph";
-import type { SimpleEdge } from "./links";
+import type { AnchorRegion, SimpleEdge } from "./links";
 import { isSitemapEligible } from "./projections";
 
 /** One proposed contextual link, in the direction the link would be authored. */
@@ -32,8 +32,8 @@ export interface LinkCandidateOptions {
   readonly limit?: number;
   /** Restrict to these clusters; a filter may be a section or a bare kind. */
   readonly clusters?: ReadonlyArray<string>;
-  /** Anchors already served in HTML; their pairs are excluded when supplied. */
-  readonly renderedEdges?: ReadonlyArray<SimpleEdge>;
+  /** Anchors already served in HTML. Only body-region edges exclude their own direction. */
+  readonly renderedEdges?: ReadonlyArray<SimpleEdge & { readonly region?: AnchorRegion }>;
 }
 
 /** One cluster and how many candidate pairs it contributes (before `limit`). */
@@ -67,6 +67,8 @@ export const undirectedEdgeKey = (from: string, to: string): string => {
   const [a, b] = [normalize(from), normalize(to)].sort();
   return `${a}\u0000${b}`;
 };
+
+const directedEdgeKey = (from: string, to: string): string => `${normalize(from)}\u0000${normalize(to)}`;
 
 /** First path segment, or undefined for the root page. */
 const topSegment = (path: string): string | undefined => {
@@ -123,13 +125,16 @@ export const generateLinkCandidates = (
 ): LinkCandidateResult => {
   const limit = options.limit ?? 50;
   const filters = options.clusters ?? [];
+  // Legacy bare edges have no region. Treat them as body links so a v1 edge dump
+  // remains conservative; region-aware artifacts retain nav/header/footer edges.
   const rendered = new Set(
-    (options.renderedEdges ?? []).map((edge) => undirectedEdgeKey(edge.from, edge.to)),
+    (options.renderedEdges ?? []).filter((edge) => edge.region === undefined || edge.region === "body")
+      .map((edge) => directedEdgeKey(edge.from, edge.to)),
   );
   const declared = new Set(
     graph.edges
       .filter((edge) => edge.type === "related")
-      .map((edge) => undirectedEdgeKey(edge.from, edge.to)),
+      .map((edge) => directedEdgeKey(edge.from, edge.to)),
   );
 
   const eligible = [...graph.nodes.values()].filter(isSitemapEligible);
@@ -144,10 +149,11 @@ export const generateLinkCandidates = (
       if (filters.length > 0 && !filters.some((filter) => matchesClusterFilter(cluster.key, filter))) {
         continue;
       }
-      const key = undirectedEdgeKey(a.path, b.path);
-      if (declared.has(key) || rendered.has(key)) continue;
-      all.push({ source: a.path, destination: b.path, cluster: cluster.key, reason: cluster.reason });
-      all.push({ source: b.path, destination: a.path, cluster: cluster.key, reason: cluster.reason });
+      for (const [source, destination] of [[a.path, b.path], [b.path, a.path]]) {
+        const key = directedEdgeKey(source!, destination!);
+        if (declared.has(key) || rendered.has(key)) continue;
+        all.push({ source: source!, destination: destination!, cluster: cluster.key, reason: cluster.reason });
+      }
     }
   }
 
@@ -184,7 +190,7 @@ export const generateLinkCandidates = (
  * `{ from, to }` edges, or an object carrying `edges` (or `internalEdges`).
  * Throws on any other shape — this is user input, not a provider payload.
  */
-export const decodeRenderedEdges = (input: unknown): ReadonlyArray<SimpleEdge> => {
+export const decodeRenderedEdges = (input: unknown): ReadonlyArray<SimpleEdge & { readonly region?: AnchorRegion }> => {
   const array =
     Array.isArray(input)
       ? input
@@ -206,10 +212,13 @@ export const decodeRenderedEdges = (input: unknown): ReadonlyArray<SimpleEdge> =
     if (item === null || typeof item !== "object") {
       throw new Error("each rendered edge must be an object with string `from` and `to`");
     }
-    const { from, to } = item as { from?: unknown; to?: unknown };
+    const { from, to, region } = item as { from?: unknown; to?: unknown; region?: unknown };
     if (typeof from !== "string" || typeof to !== "string") {
       throw new Error("each rendered edge must have string `from` and `to`");
     }
-    return { from, to };
+    if (region !== undefined && !["nav", "header", "footer", "body"].includes(region as string)) {
+      throw new Error("rendered edge region must be nav, header, footer, or body");
+    }
+    return region === undefined ? { from, to } : { from, to, region: region as AnchorRegion };
   });
 };

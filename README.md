@@ -434,7 +434,12 @@ private-IP-blocked HTTP path as `pagegraph audit` — and reports what a crawler
 actually receives: the real homepage depth, the pages with no incoming internal
 edge (rendered orphans), and, when the app has a `seo.config.ts`, the
 declared-vs-rendered link diff. It is bounded with `--limit` and needs no
-framework or config:
+framework or config. Discovery reads same-origin `robots.txt` and bounded
+sitemaps before following page anchors, so a sitemap-only page can appear as an
+orphan. The JSON `crawl` block records skipped URLs, discovery failures, and
+sitemap truncation. Link-followed non-HTML alternates are recorded in `nonHtml`
+without counting as HTML page failures; a sitemap-listed or declared page served
+as non-HTML still blocks a coverage assertion:
 
 ```bash
 pagegraph links verify https://example.com
@@ -467,6 +472,11 @@ and the provenance a gate needs to trust it:
     "bodyTruncated": false,
     "truncatedPages": [],
     "failures": [],
+    "nonHtml": [{ "url": "https://example.com/auth.md", "finalUrl": "https://example.com/auth.md", "contentType": "text/markdown" }],
+    "discoveryFailures": [],
+    "skipped": [],
+    "sitemapTruncated": false,
+    "sitemapUsed": true,
   },
   "nodes": ["/", "/pricing"],
   "edges": [{ "from": "/", "to": "/pricing", "region": "body" }],
@@ -492,6 +502,7 @@ pagegraph links verify --rendered .seo/rendered.json --assert-coverage --json | 
 The command exits non-zero when any rule is unmet, and **refuses to assert** (also
 non-zero) rather than reporting a false pass when the crawl outran `--limit`, a
 page failed to fetch (its anchors are missing), a body hit `--max-body-bytes`, the
+robots or sitemap discovery is incomplete, the
 config declares no `coverage`, or the artifact's origin differs from
 `seo.config.ts`. Under `--assert-coverage` the report gains a `coverage` block
 (`{ rules, ok, violations }`); the default `--json` summary is unchanged.
@@ -502,9 +513,11 @@ config declares no `coverage`, or the artifact's origin differs from
 `(source, destination)` pairs that are plausible contextual links and not already
 connected. Pages are grouped into clusters — a shared top-level section, or the
 same `kind` for root-level pages — and only sitemap-eligible pages are proposed.
-Pairs already declared as a `related` edge are excluded, and `--rendered` accepts
-a JSON dump of already-served anchors (`[{ from, to }]` or `{ edges: [...] }`) to
-exclude those too.
+Each direction is evaluated separately. A declared `related` edge or served
+body-region anchor excludes only its own direction. Nav, header, and footer
+anchors do not exclude contextual suggestions. `--rendered` accepts a JSON dump
+of already-served anchors (`[{ from, to, region }]` or `{ edges: [...] }`).
+Legacy edges without a `region` are treated as body links.
 
 The output is a deterministic, reviewable plan: human text by default and
 versioned JSON with `--json`. Nothing is applied; `--limit` and `--cluster`

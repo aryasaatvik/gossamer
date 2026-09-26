@@ -107,24 +107,25 @@ describe("generateLinkCandidates", () => {
     expect(pairs(graph)).not.toContain("/pricing→/blog/a");
   });
 
-  it("excludes pairs already declared as a related edge, in either direction", () => {
+  it("excludes only the declared related direction", () => {
     const graph = graphOf(
       [instanceNode("/blog/a"), instanceNode("/blog/b")],
       [{ from: "/blog/a", to: "/blog/b", type: "related" }],
     );
-    expect(pairs(graph)).toEqual([]);
+    expect(pairs(graph)).toEqual(["/blog/b→/blog/a"]);
   });
 
-  it("excludes pairs already rendered as an anchor when rendered edges are supplied", () => {
+  it("excludes only a rendered body anchor in its own direction", () => {
     const graph = graphOf([instanceNode("/blog/a"), instanceNode("/blog/b")]);
-    expect(pairs(graph, { renderedEdges: [{ from: "/blog/b", to: "/blog/a" }] })).toEqual([]);
+    expect(pairs(graph, { renderedEdges: [{ from: "/blog/b", to: "/blog/a", region: "body" }] })).toEqual(["/blog/a→/blog/b"]);
+    expect(pairs(graph, { renderedEdges: [{ from: "/blog/b", to: "/blog/a", region: "nav" }] })).toEqual(["/blog/a→/blog/b", "/blog/b→/blog/a"]);
   });
 
   it("normalizes queries and hashes on rendered edges before excluding", () => {
     const graph = graphOf([instanceNode("/blog/a"), instanceNode("/blog/b")]);
     expect(
       pairs(graph, { renderedEdges: [{ from: "/blog/a?ref=nav", to: "/blog/b#details" }] }),
-    ).toEqual([]);
+    ).toEqual(["/blog/b→/blog/a"]);
   });
 
   it("normalizes queries and hashes on declared edges before excluding", () => {
@@ -132,7 +133,7 @@ describe("generateLinkCandidates", () => {
       [instanceNode("/blog/a"), instanceNode("/blog/b")],
       [{ from: "/blog/a/?ref=nav", to: "/blog/b#details", type: "related" }],
     );
-    expect(pairs(graph)).toEqual([]);
+    expect(pairs(graph)).toEqual(["/blog/b→/blog/a"]);
   });
 
   it("does not treat a breadcrumb edge as an existing contextual connection", () => {
@@ -245,6 +246,15 @@ describe("decodeRenderedEdges", () => {
     expect(decodeRenderedEdges([edge])).toEqual([edge]);
     expect(decodeRenderedEdges({ edges: [edge] })).toEqual([edge]);
     expect(decodeRenderedEdges({ internalEdges: [edge] })).toEqual([edge]);
+  });
+
+  it("retains regions and treats a missing legacy region as a body edge", () => {
+    expect(decodeRenderedEdges({ edges: [{ from: "/a", to: "/b", region: "nav" }] })).toEqual([
+      { from: "/a", to: "/b", region: "nav" },
+    ]);
+    const graph = graphOf([instanceNode("/a"), instanceNode("/b")]);
+    expect(pairs(graph, { renderedEdges: decodeRenderedEdges([{ from: "/a", to: "/b" }]) })).toEqual(["/b→/a"]);
+    expect(() => decodeRenderedEdges([{ from: "/a", to: "/b", region: "sidebar" }])).toThrow("region");
   });
 
   it("rejects malformed input", () => {
