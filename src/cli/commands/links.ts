@@ -7,8 +7,11 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 
 import { crawlRenderedPages } from "../../audit/crawl";
+import { probeHttp } from "../../audit/scanners/http";
 import { checkRenderedCoverage, type CoverageRule, type Violation } from "../../core/checks";
 import { decodeRenderedEdges, generateLinkCandidates } from "../../core/link-candidates";
+import { extractPageSentences, rankLinkSuggestions, type LinksSuggestionReport } from "../../core/link-suggestions";
+import { isSitemapEligible } from "../../core/projections";
 import {
   buildRenderedGraph,
   decodeRenderedEdgeArtifact,
@@ -498,6 +501,14 @@ const renderedFlag = Flag.String("rendered").pipe(
   Flag.withDescription("JSON file of already-rendered edges to exclude (array or { edges })"),
   Flag.optional,
 );
+const siteFlag = Flag.String("site").pipe(
+  Flag.withDescription("Opt in to same-origin served-content suggestions"),
+  Flag.optional,
+);
+const pageLimitFlag = Flag.Int("page-limit").pipe(
+  Flag.withDescription("Maximum declared pages to probe for content (default 25)"),
+  Flag.withDefault(25),
+);
 /** Read already-rendered edges from an optional JSON file; absent input is no exclusions. */
 const readRenderedEdges = (
   file: string | undefined,
@@ -517,6 +528,11 @@ const linksCandidatesCommand = Command.make("candidates", {
   limit: candidatesLimitFlag,
   cluster: clusterFlag,
   rendered: renderedFlag,
+  site: siteFlag,
+  pageLimit: pageLimitFlag,
+  allowPrivate,
+  requestTimeoutMs,
+  maxBodyBytes,
 }).pipe(
   Command.withDescription(
     "Propose reviewable contextual links from the declared graph, clustered and not already connected",
@@ -534,14 +550,72 @@ const linksCandidatesCommand = Command.make("candidates", {
       command: "pagegraph links candidates --rendered rendered.json --json | jq",
       description: "Exclude anchors already served, and emit versioned JSON",
     },
+    {
+      command: "pagegraph links candidates --site https://example.com --json",
+      description: "Rank verifiable sentence-and-anchor suggestions from served pages",
+    },
   ]),
   Command.withHandler(
     Effect.fn("SeoCli.linksCandidates")(function* (options) {
       const limit = yield* positive("limit", options.limit);
+      const pageLimit = yield* positive("page-limit", options.pageLimit);
 
       const config = yield* loadSeoConfig;
       const graph = yield* Effect.scoped(acquireGraph(config));
       const renderedEdges = yield* readRenderedEdges(Option.getOrUndefined(options.rendered));
+
+      const site = Option.getOrUndefined(options.site);
+      if (site !== undefined) {
+        const report = yield* Effect.tryPromise({
+          try: async (): Promise<LinksSuggestionReport> => {
+            const target = new URL(site);
+            const configured = new URL(config.origin);
+            if (!["http:", "https:"].includes(target.protocol) || target.origin !== configured.origin) {
+              throw new Error(`--site origin must match seo.config.ts (${configured.origin})`);
+            }
+            const nodes = [...graph.nodes.values()].filter(isSitemapEligible).sort((a, b) => a.path.localeCompare(b.path));
+            const selected = nodes.slice(0, pageLimit);
+            const skipped: Array<{ path: string; reason: string }> = nodes.slice(pageLimit).map((node) => ({ path: node.path, reason: "page limit" }));
+            const pages: Array<{ path: string; sentences: ReadonlyArray<string> }> = [];
+            const observed: Array<{ from: string; to: string; region: "nav" | "header" | "footer" | "body" }> = [];
+            for (const node of selected) {
+              const url = new URL(node.path, configured);
+              const probe = await probeHttp({ kind: "page-html", method: "GET", accept: "text/html", url }, {
+                sameOrigin: configured.origin,
+                allowPrivate: options.allowPrivate,
+                timeoutMs: options.requestTimeoutMs,
+                maxBodyBytes: options.maxBodyBytes,
+                captureAnchors: true,
+                captureBody: true,
+              });
+              if (!probe.ok || probe.bodyTruncated || !probe.responseHeaders["content-type"]?.includes("text/html") || !probe.body || !probe.finalUrl || new URL(probe.finalUrl).pathname.replace(/\/+$/, "") !== node.path.replace(/\/+$/, "")) {
+                skipped.push({ path: node.path, reason: probe.error ?? (probe.bodyTruncated ? "body truncated" : "unreadable or redirected page") });
+                continue;
+              }
+              const sentences = extractPageSentences(probe.body);
+              if (sentences.length === 0) { skipped.push({ path: node.path, reason: "no readable main content" }); continue; }
+              pages.push({ path: node.path, sentences });
+              for (const anchor of probe.anchors ?? []) {
+                if (!anchor.internal) continue;
+                observed.push({ from: node.path, to: new URL(anchor.href).pathname.replace(/\/+$/, "") || "/", region: anchor.region });
+              }
+            }
+            const pairs = generateLinkCandidates(graph, { clusters: options.cluster, limit: Number.MAX_SAFE_INTEGER, renderedEdges: [...renderedEdges, ...observed] }).candidates;
+            const inbound = new Map<string, number>();
+            for (const edge of [...graph.edges.filter((edge) => edge.type === "related"), ...observed.filter((edge) => edge.region === "body")]) {
+              inbound.set(edge.to, (inbound.get(edge.to) ?? 0) + 1);
+            }
+            const ranked = rankLinkSuggestions(pairs, pages, inbound, limit);
+            return { kind: "links-candidates", schemaVersion: 2, origin: configured.origin, limit, pageLimit, total: ranked.total,
+              truncated: ranked.total > ranked.candidates.length || skipped.some((item) => item.reason === "page limit"),
+              skipped, candidates: ranked.candidates };
+          },
+          catch: (cause) => new SeoCliError({ message: `Could not produce site suggestions: ${messageOf(cause)}` }),
+        });
+        if (options.json) yield* printJson(report);
+        else yield* printText(`${report.total} content-backed suggestion(s) · ${report.skipped.length} page(s) skipped\n\n${report.candidates.map((item) => `${item.source} → ${item.destination} (score ${item.score})\n  ${item.sentence}\n  Anchor: ${item.anchor}\n  Target: ${item.targetSentence}\n  ${item.reason}`).join("\n\n")}`);
+        return;
+      }
 
       const result = generateLinkCandidates(graph, {
         limit,
