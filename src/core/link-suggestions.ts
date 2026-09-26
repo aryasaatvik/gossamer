@@ -1,4 +1,7 @@
-import type { LinkCandidatePair } from "./link-candidates";
+import { candidateClusterOf, matchesClusterFilter, type LinkCandidatePair } from "./link-candidates";
+import type { SeoGraph, SeoNode } from "./graph";
+import type { AnchorRegion, SimpleEdge } from "./links";
+import { isSitemapEligible } from "./projections";
 
 export interface PageContent {
   readonly path: string;
@@ -25,6 +28,65 @@ export interface LinksSuggestionReport {
   readonly candidates: ReadonlyArray<LinkSuggestion>;
 }
 
+/** Select pages around low-inbound directions without materializing the full pair universe. */
+export const selectSuggestionPages = (
+  graph: SeoGraph,
+  options: {
+    readonly pageLimit: number;
+    readonly targets: ReadonlySet<string>;
+    readonly sources: ReadonlySet<string>;
+    readonly clusters: ReadonlyArray<string>;
+    readonly renderedEdges: ReadonlyArray<SimpleEdge & { readonly region?: AnchorRegion }>;
+  },
+): ReadonlyArray<SeoNode> => {
+  const eligible = [...graph.nodes.values()].filter(isSitemapEligible).sort((a, b) => a.path.localeCompare(b.path));
+  const byPath = new Map(eligible.map((node) => [node.path, node]));
+  for (const path of [...options.targets, ...options.sources]) {
+    if (!byPath.has(path)) throw new Error(`Requested page is not a sitemap-eligible graph path: ${path}`);
+  }
+  const selected = new Set([...options.targets, ...options.sources]);
+  if (selected.size > options.pageLimit || (options.targets.size > 0 && options.sources.size === 0 && options.targets.size >= options.pageLimit)) {
+    throw new Error("--page-limit must leave room for a candidate source beyond requested targets");
+  }
+  const normalized = (path: string): string => path.split(/[?#]/, 1)[0]!.replace(/\/+$/, "") || "/";
+  const key = (source: string, destination: string): string => `${normalized(source)}\u0000${normalized(destination)}`;
+  const excluded = new Set([
+    ...graph.edges.filter((edge) => edge.type === "related").map((edge) => key(edge.from, edge.to)),
+    ...options.renderedEdges.filter((edge) => edge.region === undefined || edge.region === "body").map((edge) => key(edge.from, edge.to)),
+  ]);
+  const inbound = new Map<string, number>();
+  for (const edge of graph.edges) if (edge.type === "related") inbound.set(edge.to, (inbound.get(edge.to) ?? 0) + 1);
+  const sections = new Map<string, Array<SeoNode>>();
+  const rootKinds = new Map<string, Array<SeoNode>>();
+  for (const node of eligible) {
+    const segments = node.path.split("/").filter(Boolean);
+    const section = segments[0];
+    if (section) sections.set(section, [...(sections.get(section) ?? []), node]);
+    if (segments.length <= 1) rootKinds.set(node.kind, [...(rootKinds.get(node.kind) ?? []), node]);
+  }
+  const destinations = (options.targets.size === 0 ? eligible : eligible.filter((node) => options.targets.has(node.path)))
+    .sort((a, b) => (inbound.get(a.path) ?? 0) - (inbound.get(b.path) ?? 0) || a.path.localeCompare(b.path));
+  for (const destination of destinations) {
+    if (selected.size >= options.pageLimit) break;
+    const section = destination.path.split("/").filter(Boolean)[0];
+    const sources = [...new Map([
+      ...(section ? sections.get(section) ?? [] : []),
+      ...(destination.path.split("/").filter(Boolean).length <= 1 ? rootKinds.get(destination.kind) ?? [] : []),
+    ].map((node) => [node.path, node])).values()];
+    for (const source of sources) {
+      if (source.path === destination.path || (options.sources.size > 0 && !options.sources.has(source.path))) continue;
+      const cluster = candidateClusterOf(source, destination);
+      if (!cluster || (options.clusters.length > 0 && !options.clusters.some((filter) => matchesClusterFilter(cluster.key, filter)))
+        || excluded.has(key(source.path, destination.path))) continue;
+      const needed = Number(!selected.has(source.path)) + Number(!selected.has(destination.path));
+      if (selected.size + needed > options.pageLimit) continue;
+      selected.add(source.path); selected.add(destination.path);
+      if (selected.size >= options.pageLimit) break;
+    }
+  }
+  return eligible.filter((node) => selected.has(node.path));
+};
+
 const decode = (text: string): string => text
   .replace(/&nbsp;|&#160;/gi, " ").replace(/&amp;/gi, "&")
   .replace(/&lt;/gi, "<").replace(/&gt;/gi, ">")
@@ -33,7 +95,10 @@ const decode = (text: string): string => text
 
 /** Restrict placements to visible main/article copy, ignoring site chrome and scripts. */
 export const extractPageSentences = (html: string): ReadonlyArray<string> => {
-  const clean = html.replace(/<(script|style|noscript|svg|nav|header|footer)\b[^>]*>[\s\S]*?<\/\1>/gi, " ");
+  const clean = html
+    .replace(/<(script|style|noscript|svg|nav|header|footer|template)\b[^>]*>[\s\S]*?<\/\1>/gi, " ")
+    .replace(/<([a-z][\w:-]*)\b(?=[^>]*(?:\shidden(?:\s|=|>)|\saria-hidden\s*=\s*["']?true|\sstyle\s*=\s*["'][^"']*(?:display\s*:\s*none|visibility\s*:\s*hidden)))[^>]*>[\s\S]*?<\/\1>/gi, " ")
+    .replace(/<a\b[^>]*>[\s\S]*?<\/a>/gi, "\u0000");
   const main = /<main\b[^>]*>([\s\S]*?)<\/main>/i.exec(clean)?.[1]
     ?? /<article\b[^>]*>([\s\S]*?)<\/article>/i.exec(clean)?.[1];
   if (main === undefined) return [];

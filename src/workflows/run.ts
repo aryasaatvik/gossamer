@@ -12,7 +12,7 @@ import { decodeLinksSuggestionReport } from "../core/link-suggestions";
 import type { DecisionBatchReport } from "../decide/record";
 import { createRunId, writeResearchCheckpoint, writeRunBundle } from "./artifact";
 import { getWorkflowSpec } from "./catalog";
-import { collectWorkflowEvidence } from "./evidence";
+import { collectWorkflowEvidence, selectGraph } from "./evidence";
 import { changedFiles, inspectGit } from "./git";
 import type { WorkflowMutationPolicy } from "./mutation";
 import { createWorkflowMutationPolicy, repositoryMutationPermissionRules } from "./mutation";
@@ -149,9 +149,13 @@ export const runWorkflow = async (
   const suggestionReport = input.options.suggestions === undefined ? undefined : (() => {
     if (spec.id !== "improve.links") throw new Error("--suggestions is only valid for improve links");
     const report = decodeLinksSuggestionReport(JSON.parse(readFileSync(resolve(input.root, input.options.suggestions), "utf8")), new URL(input.config.origin).origin);
+    const selectedSources = selectGraph(input.graph, input.options).nodes;
     for (const candidate of report.candidates) {
       if (!input.graph.nodes.has(candidate.source) || !input.graph.nodes.has(candidate.destination)) {
         throw new Error(`Suggestion references a path absent from seo.config.ts: ${candidate.source} → ${candidate.destination}`);
+      }
+      if (!selectedSources.has(candidate.source)) {
+        throw new Error(`Suggestion source is outside workflow page/kind/limit targets: ${candidate.source}`);
       }
     }
     return report;

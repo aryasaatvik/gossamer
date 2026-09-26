@@ -10,7 +10,7 @@ import { allowedByRobots, crawlRenderedPages, robotsRules } from "../../audit/cr
 import { probeHttp } from "../../audit/scanners/http";
 import { checkRenderedCoverage, type CoverageRule, type Violation } from "../../core/checks";
 import { decodeRenderedEdges, generateLinkCandidates } from "../../core/link-candidates";
-import { extractPageSentences, rankLinkSuggestions, type LinksSuggestionReport } from "../../core/link-suggestions";
+import { extractPageSentences, rankLinkSuggestions, selectSuggestionPages, type LinksSuggestionReport } from "../../core/link-suggestions";
 import { isSitemapEligible } from "../../core/projections";
 import {
   buildRenderedGraph,
@@ -587,28 +587,11 @@ const linksCandidatesCommand = Command.make("candidates", {
             if (!["http:", "https:"].includes(target.protocol) || target.origin !== configured.origin) {
               throw new Error(`--site origin must match seo.config.ts (${configured.origin})`);
             }
-            const nodes = [...graph.nodes.values()].filter(isSitemapEligible).sort((a, b) => a.path.localeCompare(b.path));
             const requestedTargets = new Set(options.target);
             const requestedSources = new Set(options.source);
-            for (const path of [...requestedTargets, ...requestedSources]) {
-              if (!nodes.some((node) => node.path === path)) throw new Error(`Requested page is not a sitemap-eligible graph path: ${path}`);
-            }
-            if (new Set([...requestedTargets, ...requestedSources]).size > pageLimit) throw new Error("--page-limit must cover requested --source and --target paths");
-            const declaredInbound = new Map<string, number>();
-            for (const edge of graph.edges) if (edge.type === "related") declaredInbound.set(edge.to, (declaredInbound.get(edge.to) ?? 0) + 1);
-            const allPairs = generateLinkCandidates(graph, { clusters: options.cluster, limit: Number.MAX_SAFE_INTEGER, renderedEdges }).candidates
-              .filter((pair) => (requestedTargets.size === 0 || requestedTargets.has(pair.destination))
-                && (requestedSources.size === 0 || requestedSources.has(pair.source)))
-              .sort((a, b) => (declaredInbound.get(a.destination) ?? 0) - (declaredInbound.get(b.destination) ?? 0)
-                || a.destination.localeCompare(b.destination) || a.source.localeCompare(b.source));
-            const selectedPaths = new Set<string>([...requestedTargets, ...requestedSources]);
-            for (const pair of allPairs) {
-              if (selectedPaths.size >= pageLimit) break;
-              if (selectedPaths.has(pair.source) && selectedPaths.has(pair.destination)) continue;
-              if (selectedPaths.size + Number(!selectedPaths.has(pair.source)) + Number(!selectedPaths.has(pair.destination)) > pageLimit) continue;
-              selectedPaths.add(pair.source); selectedPaths.add(pair.destination);
-            }
-            const selected = nodes.filter((node) => selectedPaths.has(node.path));
+            const nodes = [...graph.nodes.values()].filter(isSitemapEligible);
+            const selected = selectSuggestionPages(graph, { pageLimit, targets: requestedTargets, sources: requestedSources, clusters: options.cluster, renderedEdges });
+            const selectedPaths = new Set(selected.map((node) => node.path));
             const skipped: Array<{ path: string; reason: string }> = nodes.filter((node) => !selectedPaths.has(node.path)).map((node) => ({ path: node.path, reason: "page limit or target filter" }));
             const robots = await probeHttp({ kind: "robots", method: "GET", accept: "text/plain", url: new URL("/robots.txt", configured) }, {
               sameOrigin: configured.origin, allowPrivate: options.allowPrivate, timeoutMs: options.requestTimeoutMs,
@@ -630,8 +613,10 @@ const linksCandidatesCommand = Command.make("candidates", {
                 maxBodyBytes: options.maxBodyBytes,
                 captureAnchors: true,
                 captureBody: true,
+                allowUrl: (next) => allowedByRobots(`${next.pathname}${next.search}`, rules),
               });
-              if (!probe.ok || probe.bodyTruncated || !probe.responseHeaders["content-type"]?.includes("text/html") || !probe.body || !probe.finalUrl || new URL(probe.finalUrl).pathname.replace(/\/+$/, "") !== node.path.replace(/\/+$/, "")) {
+              const contentType = probe.responseHeaders["content-type"];
+              if (!probe.ok || probe.bodyTruncated || (contentType !== undefined && !/text\/html|application\/xhtml\+xml/i.test(contentType)) || !probe.body || !probe.finalUrl || new URL(probe.finalUrl).pathname.replace(/\/+$/, "") !== node.path.replace(/\/+$/, "")) {
                 skipped.push({ path: node.path, reason: probe.error ?? (probe.bodyTruncated ? "body truncated" : "unreadable or redirected page") });
                 continue;
               }

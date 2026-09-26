@@ -84,7 +84,7 @@ const isRootLevel = (path: string): boolean => path.split("/").filter(Boolean).l
  * a shared top-level section wins. The kind fallback is local to root-level
  * pages, so it never pairs two nested pages from different sections.
  */
-const clusterOf = (a: SeoNode, b: SeoNode): { key: string; reason: string } | undefined => {
+export const candidateClusterOf = (a: SeoNode, b: SeoNode): { key: string; reason: string } | undefined => {
   const aSegment = topSegment(a.path);
   const bSegment = topSegment(b.path);
   if (aSegment !== undefined && aSegment === bSegment) {
@@ -144,7 +144,7 @@ export const generateLinkCandidates = (
     for (let j = i + 1; j < eligible.length; j++) {
       const a = eligible[i]!;
       const b = eligible[j]!;
-      const cluster = clusterOf(a, b);
+      const cluster = candidateClusterOf(a, b);
       if (cluster === undefined) continue;
       if (filters.length > 0 && !filters.some((filter) => matchesClusterFilter(cluster.key, filter))) {
         continue;

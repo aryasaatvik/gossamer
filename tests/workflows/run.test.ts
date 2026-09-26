@@ -446,7 +446,7 @@ describe("workflow runner", () => {
     git(root, "add", "suggestions.json"); git(root, "commit", "-m", "add suggestions");
     const state = { summary: "One candidate", items: [{ from: suggestion.source, to: suggestion.destination, anchor: suggestion.anchor, context: suggestion.sentence, relation: "pricing" }] };
     let continued = false;
-    const result = await runWorkflow({ config, graph, root, workflow: "improve.links", options: { ...options, suggestions: path } }, {
+    const result = await runWorkflow({ config, graph, root, workflow: "improve.links", options: { ...options, limit: 2, suggestions: path } }, {
       acquireHost: async () => ({
         model: { provider: "test", id: "model" },
         research: async (prompt) => { expect(prompt).toContain(suggestion.sentence); return { state, sessionId: "links", transcript: {}, executor: executorEvidence }; },
