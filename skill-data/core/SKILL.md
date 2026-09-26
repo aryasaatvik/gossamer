@@ -131,14 +131,21 @@ export default defineSeoConfig({
 ```ts
 // vite.config.ts
 import { fileURLToPath } from "node:url";
+import { tanstackStart } from "@tanstack/react-start/plugin/vite";
+import { defineConfig } from "vite";
 import { seoRouteConfig } from "pagegraph/vite";
 
-// Add alongside tanstackStart(); it runs its own route parse and does not replace the Start plugin.
-seoRouteConfig({
-  outputPath: fileURLToPath(new URL("./src/lib/route-config.ts", import.meta.url)),
-  publicGroups: ["(marketing)"],
-  enforceCoverageIn: ["(marketing)"],
-  alwaysDisallow: ["/dashboard", "/api"],
+export default defineConfig({
+  plugins: [
+    tanstackStart(),
+    // Runs its own route parse; it does not replace the Start plugin.
+    seoRouteConfig({
+      outputPath: fileURLToPath(new URL("./src/lib/route-config.ts", import.meta.url)),
+      publicGroups: ["(marketing)"],
+      enforceCoverageIn: ["(marketing)"],
+      alwaysDisallow: ["/dashboard", "/api"],
+    }),
+  ],
 });
 ```
 
