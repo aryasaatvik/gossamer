@@ -32,6 +32,12 @@ describe("content-backed link suggestions", () => {
     expect(rankLinkSuggestions([pair], pages, new Map(), 0)).toEqual({ candidates: [], total: 1 });
   });
 
+  it("does not join separate blocks into a fabricated sentence", () => {
+    const first = "The guide explains transactional delivery retries for teams";
+    const second = "Message tracking gives operators a clear record of every attempt.";
+    expect(extractPageSentences(`<main><p>${first}</p><p>${second}</p></main>`)).toEqual([first, second]);
+  });
+
   it("rejects malformed, wrong-origin, and nonverbatim artifacts", () => {
     const candidate = rankLinkSuggestions([pair], [
       { path: pair.source, sentences: [sentence] }, { path: pair.destination, sentences: [targetSentence] },

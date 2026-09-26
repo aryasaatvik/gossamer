@@ -509,6 +509,14 @@ const pageLimitFlag = Flag.Int("page-limit").pipe(
   Flag.withDescription("Maximum declared pages to probe for content (default 25)"),
   Flag.withDefault(25),
 );
+const targetFlag = Flag.String("target").pipe(
+  Flag.withDescription("Prioritize an exact target page path (repeatable)"),
+  Flag.between(0, 64),
+);
+const sourceFlag = Flag.String("source").pipe(
+  Flag.withDescription("Prioritize an exact source page path (repeatable)"),
+  Flag.between(0, 64),
+);
 /** Read already-rendered edges from an optional JSON file; absent input is no exclusions. */
 const readRenderedEdges = (
   file: string | undefined,
@@ -530,6 +538,8 @@ const linksCandidatesCommand = Command.make("candidates", {
   rendered: renderedFlag,
   site: siteFlag,
   pageLimit: pageLimitFlag,
+  target: targetFlag,
+  source: sourceFlag,
   allowPrivate,
   requestTimeoutMs,
   maxBodyBytes,
@@ -554,6 +564,10 @@ const linksCandidatesCommand = Command.make("candidates", {
       command: "pagegraph links candidates --site https://example.com --json",
       description: "Rank verifiable sentence-and-anchor suggestions from served pages",
     },
+    {
+      command: "pagegraph links candidates --site https://example.com --target /blog/weak --json",
+      description: "Probe a weak target and its candidate source pages first",
+    },
   ]),
   Command.withHandler(
     Effect.fn("SeoCli.linksCandidates")(function* (options) {
@@ -574,8 +588,28 @@ const linksCandidatesCommand = Command.make("candidates", {
               throw new Error(`--site origin must match seo.config.ts (${configured.origin})`);
             }
             const nodes = [...graph.nodes.values()].filter(isSitemapEligible).sort((a, b) => a.path.localeCompare(b.path));
-            const selected = nodes.slice(0, pageLimit);
-            const skipped: Array<{ path: string; reason: string }> = nodes.slice(pageLimit).map((node) => ({ path: node.path, reason: "page limit" }));
+            const requestedTargets = new Set(options.target);
+            const requestedSources = new Set(options.source);
+            for (const path of [...requestedTargets, ...requestedSources]) {
+              if (!nodes.some((node) => node.path === path)) throw new Error(`Requested page is not a sitemap-eligible graph path: ${path}`);
+            }
+            if (new Set([...requestedTargets, ...requestedSources]).size > pageLimit) throw new Error("--page-limit must cover requested --source and --target paths");
+            const declaredInbound = new Map<string, number>();
+            for (const edge of graph.edges) if (edge.type === "related") declaredInbound.set(edge.to, (declaredInbound.get(edge.to) ?? 0) + 1);
+            const allPairs = generateLinkCandidates(graph, { clusters: options.cluster, limit: Number.MAX_SAFE_INTEGER, renderedEdges }).candidates
+              .filter((pair) => (requestedTargets.size === 0 || requestedTargets.has(pair.destination))
+                && (requestedSources.size === 0 || requestedSources.has(pair.source)))
+              .sort((a, b) => (declaredInbound.get(a.destination) ?? 0) - (declaredInbound.get(b.destination) ?? 0)
+                || a.destination.localeCompare(b.destination) || a.source.localeCompare(b.source));
+            const selectedPaths = new Set<string>([...requestedTargets, ...requestedSources]);
+            for (const pair of allPairs) {
+              if (selectedPaths.size >= pageLimit) break;
+              if (selectedPaths.has(pair.source) && selectedPaths.has(pair.destination)) continue;
+              if (selectedPaths.size + Number(!selectedPaths.has(pair.source)) + Number(!selectedPaths.has(pair.destination)) > pageLimit) continue;
+              selectedPaths.add(pair.source); selectedPaths.add(pair.destination);
+            }
+            const selected = nodes.filter((node) => selectedPaths.has(node.path));
+            const skipped: Array<{ path: string; reason: string }> = nodes.filter((node) => !selectedPaths.has(node.path)).map((node) => ({ path: node.path, reason: "page limit or target filter" }));
             const robots = await probeHttp({ kind: "robots", method: "GET", accept: "text/plain", url: new URL("/robots.txt", configured) }, {
               sameOrigin: configured.origin, allowPrivate: options.allowPrivate, timeoutMs: options.requestTimeoutMs,
               maxBodyBytes: options.maxBodyBytes, captureBody: true,
@@ -609,17 +643,19 @@ const linksCandidatesCommand = Command.make("candidates", {
                 observed.push({ from: node.path, to: new URL(anchor.href).pathname.replace(/\/+$/, "") || "/", region: anchor.region });
               }
             }
-            const selectedPaths = new Set(pages.map((page) => page.path));
-            const scopedGraph = { ...graph, nodes: new Map([...graph.nodes].filter(([path]) => selectedPaths.has(path))),
-              edges: graph.edges.filter((edge) => selectedPaths.has(edge.from) && selectedPaths.has(edge.to)) };
-            const pairs = generateLinkCandidates(scopedGraph, { clusters: options.cluster, limit: Number.MAX_SAFE_INTEGER, renderedEdges: [...renderedEdges, ...observed] }).candidates;
+            const readablePaths = new Set(pages.map((page) => page.path));
+            const scopedGraph = { ...graph, nodes: new Map([...graph.nodes].filter(([path]) => readablePaths.has(path))),
+              edges: graph.edges.filter((edge) => readablePaths.has(edge.from) && readablePaths.has(edge.to)) };
+            const pairs = generateLinkCandidates(scopedGraph, { clusters: options.cluster, limit: Number.MAX_SAFE_INTEGER, renderedEdges: [...renderedEdges, ...observed] }).candidates
+              .filter((pair) => (requestedTargets.size === 0 || requestedTargets.has(pair.destination))
+                && (requestedSources.size === 0 || requestedSources.has(pair.source)));
             const inbound = new Map<string, number>();
             for (const edge of [...graph.edges.filter((edge) => edge.type === "related"), ...observed.filter((edge) => edge.region === "body")]) {
               inbound.set(edge.to, (inbound.get(edge.to) ?? 0) + 1);
             }
             const ranked = rankLinkSuggestions(pairs, pages, inbound, limit);
             return { kind: "links-candidates", schemaVersion: 2, origin: configured.origin, limit, pageLimit, total: ranked.total,
-              truncated: ranked.total > ranked.candidates.length || skipped.some((item) => item.reason === "page limit"),
+              truncated: ranked.total > ranked.candidates.length || skipped.some((item) => item.reason === "page limit or target filter"),
               skipped, candidates: ranked.candidates };
           },
           catch: (cause) => new SeoCliError({ message: `Could not produce site suggestions: ${messageOf(cause)}` }),

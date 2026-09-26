@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-const cli = fileURLToPath(new URL("../../src/cli/bin.ts", import.meta.url));
+const cli = process.env.PAGEGRAPH_TEST_CLI ?? fileURLToPath(new URL("../../src/cli/bin.ts", import.meta.url));
 let server: Server;
 let origin: string;
 let directory: string;
@@ -33,8 +33,8 @@ export default { origin: ${JSON.stringify(origin)}, disallow: [], loadGraph: asy
 
 afterAll(async () => { await new Promise<void>((resolve) => server.close(() => resolve())); rmSync(directory, { recursive: true, force: true }); });
 
-const run = (args: string[]): Promise<{ status: number | null; stdout: string; stderr: string }> => new Promise((resolve) => {
-  const child = spawn("bun", [cli, "links", "candidates", ...args], { cwd: directory });
+const run = (args: string[], cwd = directory): Promise<{ status: number | null; stdout: string; stderr: string }> => new Promise((resolve) => {
+  const child = spawn("bun", [cli, "links", "candidates", ...args], { cwd });
   let stdout = ""; let stderr = "";
   child.stdout.on("data", (part: Buffer) => { stdout += part.toString(); });
   child.stderr.on("data", (part: Buffer) => { stderr += part.toString(); });
@@ -57,6 +57,20 @@ describe("links candidates --site", () => {
     expect((await run(["--site", "https://wrong.example", "--json"])).status).not.toBe(0);
     const limited = await run(["--site", origin, "--allow-private", "--page-limit", "1", "--json"]);
     expect(limited.status).toBe(0);
-    expect(JSON.parse(limited.stdout)).toMatchObject({ truncated: true, skipped: [{ path: "/blog/retries", reason: "page limit" }] });
+    expect(JSON.parse(limited.stdout)).toMatchObject({ truncated: true });
+    expect(JSON.parse(limited.stdout).skipped).toHaveLength(2);
+  }, 20000);
+
+  it("uses --target to select the destination inside a small page budget", async () => {
+    const crowded = mkdtempSync(join(tmpdir(), "pagegraph-suggestions-crowded-"));
+    const filler = Array.from({ length: 30 }, (_, index) => `/blog/a${String(index).padStart(2, "0")}`);
+    writeFileSync(join(crowded, "seo.config.mjs"), `const node = path => ({ path, kind: "article", source: "blog", policy: { kind: "article", sitemap: { priority: 0.5, changeFrequency: "monthly" } } });
+export default { origin: ${JSON.stringify(origin)}, disallow: [], loadGraph: async () => ({ graph: { nodes: new Map(${JSON.stringify([...filler, "/blog/guide", "/blog/retries"].map((path) => [path, { path, kind: "article", source: "blog", policy: { kind: "article", sitemap: { priority: 0.5, changeFrequency: "monthly" } } }]))}), edges: [] }, dispose: async () => {} }) };`);
+    const result = await run(["--site", origin, "--source", "/blog/guide", "--target", "/blog/retries", "--page-limit", "2", "--allow-private", "--json"], crowded);
+    rmSync(crowded, { recursive: true, force: true });
+    expect(result.status).toBe(0);
+    const report = JSON.parse(result.stdout);
+    expect(report.candidates.some((item: { destination: string }) => item.destination === "/blog/retries")).toBe(true);
+    expect(report.candidates.every((item: { destination: string }) => item.destination === "/blog/retries")).toBe(true);
   }, 20000);
 });

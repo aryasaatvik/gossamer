@@ -37,9 +37,9 @@ export const extractPageSentences = (html: string): ReadonlyArray<string> => {
   const main = /<main\b[^>]*>([\s\S]*?)<\/main>/i.exec(clean)?.[1]
     ?? /<article\b[^>]*>([\s\S]*?)<\/article>/i.exec(clean)?.[1];
   if (main === undefined) return [];
-  const blocks = main.replace(/<\/(?:p|li|h[1-6]|blockquote|section|div)>/gi, " \n ")
+  const blocks = main.replace(/<\/(?:p|li|h[1-6]|blockquote|section|div)>/gi, "\u0000")
     .replace(/<[^>]*>/g, " ");
-  return decode(blocks).replace(/\s+/g, " ").split(/(?<=[.!?])\s+/)
+  return decode(blocks).split("\u0000").flatMap((block) => block.replace(/\s+/g, " ").split(/(?<=[.!?])\s+/))
     .map((part) => part.trim()).filter((part) => part.length >= 30 && part.length <= 500);
 };
 
@@ -73,7 +73,8 @@ export const rankLinkSuggestions = (
         ?.filter((phrase) => words(phrase).filter((term) => targetTerms.has(term)).length >= 2)
         .sort((a, b) => b.length - a.length || a.localeCompare(b))[0];
       if (!anchor || !sentence.includes(anchor)) continue;
-      const targetSentence = target.sentences.find((candidate) => words(candidate).filter((term) => matching.includes(term)).length >= 2);
+      const anchorTerms = new Set(words(anchor));
+      const targetSentence = target.sentences.find((candidate) => words(candidate).filter((term) => anchorTerms.has(term)).length >= 2);
       if (!targetSentence) continue;
       const topical = matching.length;
       const rarity = Math.round(matching.reduce((sum, term) => sum + 1 / (frequency.get(term) ?? 1), 0) * 100) / 100;
@@ -99,15 +100,23 @@ export const decodeLinksSuggestionReport = (value: unknown, origin: string): Lin
   if (report.kind !== "links-candidates" || report.schemaVersion !== 2 || report.origin !== origin || !Array.isArray(report.candidates)) {
     throw new Error(`Expected schema-version-2 suggestions for ${origin}`);
   }
-  if (!Number.isSafeInteger(report.limit) || !Number.isSafeInteger(report.pageLimit) || !Number.isSafeInteger(report.total)) throw new Error("Invalid suggestion report counts");
+  if (!Number.isSafeInteger(report.limit) || report.limit! < 1 || !Number.isSafeInteger(report.pageLimit) || report.pageLimit! < 1
+    || !Number.isSafeInteger(report.total) || report.total! < report.candidates.length
+    || typeof report.truncated !== "boolean" || !Array.isArray(report.skipped)) throw new Error("Invalid suggestion report counts");
+  const seen = new Set<string>();
   for (const candidate of report.candidates) {
     if (!pathValid(candidate.source) || !pathValid(candidate.destination) || candidate.source === candidate.destination
-      || typeof candidate.sentence !== "string" || typeof candidate.anchor !== "string" || !candidate.sentence.includes(candidate.anchor)
+      || typeof candidate.cluster !== "string" || typeof candidate.sentence !== "string" || !candidate.sentence.trim()
+      || typeof candidate.anchor !== "string" || !candidate.anchor.trim() || !candidate.sentence.includes(candidate.anchor)
       || typeof candidate.targetSentence !== "string" || !candidate.targetSentence.trim()
       || typeof candidate.reason !== "string" || typeof candidate.score !== "number" || !Number.isFinite(candidate.score)
-      || !candidate.scores || Object.values(candidate.scores).some((part) => typeof part !== "number" || !Number.isFinite(part))) {
+      || !candidate.scores || [candidate.scores.topical, candidate.scores.rarity, candidate.scores.inboundNeed, candidate.scores.graph]
+        .some((part) => typeof part !== "number" || !Number.isFinite(part))) {
       throw new Error("Malformed or ungrounded suggestion candidate");
     }
+    const key = `${candidate.source}\u0000${candidate.destination}\u0000${candidate.anchor}`;
+    if (seen.has(key)) throw new Error("Duplicate suggestion candidate");
+    seen.add(key);
   }
   return report as LinksSuggestionReport;
 };

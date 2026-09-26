@@ -525,12 +525,17 @@ For content-backed placements, opt in to a bounded same-origin probe. The config
 from served main content, an exact anchor phrase inside it, a target sentence,
 and score components. Unreadable and over-limit pages are reported as skipped.
 The pair-only command above remains offline and emits schema version 1.
+The page budget selects low-inbound candidate pairs first. Use repeatable
+`--target /exact/path` to put a known weak destination within the budget. Add
+`--source /exact/path` when you have a likely source and want to guarantee the
+pair is probed even on a large site; raise `--page-limit` for more pairs.
 
 ```bash
 pagegraph links verify https://example.com --json
-pagegraph links candidates --site https://example.com --page-limit 25 --json > suggestions.json
-pagegraph improve links --suggestions suggestions.json --dry-run
-pagegraph improve links --suggestions suggestions.json
+pagegraph links candidates --site https://example.com --page-limit 25 --json > /tmp/pagegraph-suggestions.json
+pagegraph links candidates --site https://example.com --source /blog/guide --target /blog/weak --page-limit 25 --json > /tmp/pagegraph-suggestions.json
+pagegraph improve links --suggestions /tmp/pagegraph-suggestions.json --dry-run
+pagegraph improve links --suggestions /tmp/pagegraph-suggestions.json
 ```
 
 `improve links` validates the artifact against the configured origin and graph,
