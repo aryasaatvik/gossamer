@@ -337,7 +337,7 @@ export const probeHttp = async (
         : "";
     const body = new TextDecoder().decode(bounded.bytes);
     const anchors =
-      options.captureAnchors === true && (contentType.includes("text/html") || contentType.includes("application/xhtml+xml"))
+      options.captureAnchors === true && (contentType === "" || /text\/html|application\/xhtml\+xml/i.test(contentType))
         ? extractAnchors(body, currentUrl.href)
         : undefined;
     return {

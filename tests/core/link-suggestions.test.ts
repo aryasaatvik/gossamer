@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { decodeLinksSuggestionReport, extractPageSentences, rankLinkSuggestions } from "../../src/core/link-suggestions";
+import { decodeLinksSuggestionReport, extractPageSentences, rankLinkSuggestions, selectSuggestionPages } from "../../src/core/link-suggestions";
 
 const sentence = "Our transactional email guide explains delivery retries and message tracking for product teams.";
 const targetSentence = "Delivery retries and message tracking keep transactional email reliable at scale.";
@@ -36,6 +36,25 @@ describe("content-backed link suggestions", () => {
     const first = "The guide explains transactional delivery retries for teams";
     const second = "Message tracking gives operators a clear record of every attempt.";
     expect(extractPageSentences(`<main><p>${first}</p><p>${second}</p></main>`)).toEqual([first, second]);
+  });
+
+  it("ignores hidden copy and text inside an existing link", () => {
+    const visible = "Our transactional email guide explains delivery retries and message tracking for teams.";
+    const html = `<main><div hidden><div>Hidden transactional delivery retries.</div>Hidden message tracking copy.</div><p style="display:none">Hidden message tracking copy.</p><template>Template delivery retries copy.</template><p>${visible}</p><p>Read <a href="/other">delivery retries and message tracking</a> for another topic.</p></main>`;
+    const extracted = extractPageSentences(html);
+    expect(extracted).toContain(visible);
+    expect(extracted.join(" ")).not.toContain("Hidden");
+    expect(extracted.join(" ")).not.toContain("Template");
+    expect(extracted.join(" ")).not.toContain("delivery retries and message tracking for another");
+  });
+
+  it("selects a bounded explicit pair from a large declared graph", () => {
+    const paths = [...Array.from({ length: 2000 }, (_, index) => `/blog/a${index}`), "/blog/guide", "/blog/retries"];
+    const node = (path: string) => ({ path, kind: "article", source: "blog" as const,
+      policy: { kind: "article", sitemap: { priority: 0.5, changeFrequency: "monthly" as const } } });
+    const graph = { nodes: new Map(paths.map((path) => [path, node(path)])), edges: [] };
+    expect(selectSuggestionPages(graph, { pageLimit: 2, sources: new Set(["/blog/guide"]), targets: new Set(["/blog/retries"]), clusters: [], renderedEdges: [] }).map((page) => page.path)).toEqual(["/blog/guide", "/blog/retries"]);
+    expect(() => selectSuggestionPages(graph, { pageLimit: 2, sources: new Set(), targets: new Set(["/blog/guide", "/blog/retries"]), clusters: [], renderedEdges: [] })).toThrow("leave room");
   });
 
   it("rejects malformed, wrong-origin, and nonverbatim artifacts", () => {

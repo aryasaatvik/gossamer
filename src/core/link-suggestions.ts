@@ -66,14 +66,17 @@ export const selectSuggestionPages = (
   }
   const destinations = (options.targets.size === 0 ? eligible : eligible.filter((node) => options.targets.has(node.path)))
     .sort((a, b) => (inbound.get(a.path) ?? 0) - (inbound.get(b.path) ?? 0) || a.path.localeCompare(b.path));
+  const directionBudget = Math.max(100, options.pageLimit * 100);
+  let examined = 0;
   for (const destination of destinations) {
-    if (selected.size >= options.pageLimit) break;
+    if (selected.size >= options.pageLimit || examined >= directionBudget) break;
     const section = destination.path.split("/").filter(Boolean)[0];
     const sources = [...new Map([
       ...(section ? sections.get(section) ?? [] : []),
       ...(destination.path.split("/").filter(Boolean).length <= 1 ? rootKinds.get(destination.kind) ?? [] : []),
     ].map((node) => [node.path, node])).values()];
     for (const source of sources) {
+      if (++examined > directionBudget) break;
       if (source.path === destination.path || (options.sources.size > 0 && !options.sources.has(source.path))) continue;
       const cluster = candidateClusterOf(source, destination);
       if (!cluster || (options.clusters.length > 0 && !options.clusters.some((filter) => matchesClusterFilter(cluster.key, filter)))
@@ -95,16 +98,41 @@ const decode = (text: string): string => text
 
 /** Restrict placements to visible main/article copy, ignoring site chrome and scripts. */
 export const extractPageSentences = (html: string): ReadonlyArray<string> => {
-  const clean = html
-    .replace(/<(script|style|noscript|svg|nav|header|footer|template)\b[^>]*>[\s\S]*?<\/\1>/gi, " ")
-    .replace(/<([a-z][\w:-]*)\b(?=[^>]*(?:\shidden(?:\s|=|>)|\saria-hidden\s*=\s*["']?true|\sstyle\s*=\s*["'][^"']*(?:display\s*:\s*none|visibility\s*:\s*hidden)))[^>]*>[\s\S]*?<\/\1>/gi, " ")
-    .replace(/<a\b[^>]*>[\s\S]*?<\/a>/gi, "\u0000");
-  const main = /<main\b[^>]*>([\s\S]*?)<\/main>/i.exec(clean)?.[1]
-    ?? /<article\b[^>]*>([\s\S]*?)<\/article>/i.exec(clean)?.[1];
-  if (main === undefined) return [];
-  const blocks = main.replace(/<\/(?:p|li|h[1-6]|blockquote|section|div)>/gi, "\u0000")
-    .replace(/<[^>]*>/g, " ");
-  return decode(blocks).split("\u0000").flatMap((block) => block.replace(/\s+/g, " ").split(/(?<=[.!?])\s+/))
+  const container = /<main\b/i.test(html) ? "main" : "article";
+  if (!new RegExp(`<${container}\\b`, "i").test(html)) return [];
+  const suppressedTags = new Set(["script", "style", "noscript", "svg", "nav", "header", "footer", "template", "a"]);
+  const blockTags = new Set(["p", "li", "blockquote", "section", "div", "h1", "h2", "h3", "h4", "h5", "h6"]);
+  const voidTags = new Set(["area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"]);
+  const stack: Array<{ name: string; suppressed: boolean }> = [];
+  const blocks: Array<string> = [];
+  let current = "";
+  let inside = 0;
+  const flush = () => { if (current.trim()) blocks.push(current); current = ""; };
+  for (const token of html.match(/<[^>]*>|[^<]+/g) ?? []) {
+    if (!token.startsWith("<")) {
+      if (inside > 0 && !stack.some((entry) => entry.suppressed)) current += token;
+      continue;
+    }
+    const tag = /^<\s*(\/?)\s*([a-z][\w:-]*)\b([^>]*)>/i.exec(token);
+    if (!tag) continue;
+    const name = tag[2]!.toLowerCase();
+    if (tag[1] === "/") {
+      if (name === container && inside > 0) inside--;
+      if (blockTags.has(name) || name === "a" || name === container) flush();
+      const at = stack.findLastIndex((entry) => entry.name === name);
+      if (at >= 0) stack.splice(at);
+      continue;
+    }
+    const attrs = tag[3] ?? "";
+    const hidden = /(?:^|\s)hidden(?:\s|=|$)/i.test(attrs)
+      || /\baria-hidden\s*=\s*(?:"true"|'true'|true)(?:\s|$)/i.test(attrs)
+      || /\bstyle\s*=\s*(?:"[^"]*(?:display\s*:\s*none|visibility\s*:\s*hidden)[^"]*"|'[^']*(?:display\s*:\s*none|visibility\s*:\s*hidden)[^']*')/i.test(attrs);
+    if (name === container) { flush(); inside++; }
+    if (name === "a" || blockTags.has(name)) flush();
+    if (!voidTags.has(name) && !/\/\s*>$/.test(token)) stack.push({ name, suppressed: hidden || suppressedTags.has(name) });
+  }
+  flush();
+  return blocks.flatMap((block) => decode(block).replace(/\s+/g, " ").split(/(?<=[.!?])\s+/))
     .map((part) => part.trim()).filter((part) => part.length >= 30 && part.length <= 500);
 };
 
