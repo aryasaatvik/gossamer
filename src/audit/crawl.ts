@@ -81,7 +81,16 @@ const xmlText = (value: string): string =>
     const numeric = code.startsWith("#x") || code.startsWith("#X")
       ? Number.parseInt(code.slice(2), 16)
       : Number.parseInt(code.slice(1), 10);
-    try { return String.fromCodePoint(numeric); } catch { return entity; }
+    if (
+      !Number.isInteger(numeric) ||
+      numeric === 0 ||
+      (numeric < 32 && numeric !== 9 && numeric !== 10 && numeric !== 13) ||
+      (numeric >= 0xd800 && numeric <= 0xdfff) ||
+      numeric > 0x10ffff
+    ) {
+      throw new Error(`Invalid XML character reference: ${entity}`);
+    }
+    return String.fromCodePoint(numeric);
   });
 
 const robotsRules = (body: string): { readonly rules: ReadonlyArray<{ path: string; allow: boolean }>; readonly sitemaps: ReadonlyArray<string> } => {

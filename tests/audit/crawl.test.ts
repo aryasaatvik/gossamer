@@ -183,7 +183,7 @@ describe("crawlRenderedPages", () => {
         response.end(`User-agent: Pagegraph\nDisallow: /private$\nDisallow: /wild*a*a*a*a*a*a*a*a*a*a*b\nSitemap: ${remoteSite}/map.xml\nSitemap: ${site}/sitemap.xml`);
       } else if (request.url === "/sitemap.xml") {
         response.writeHead(200, { "content-type": "application/xml" });
-        response.end(`<urlset><url><loc>${site}/numeric?a=1&#38;b=2</loc></url><url><loc>${site}/xhtml</loc></url></urlset>`);
+        response.end(`<urlset><url><loc>${site}/numeric?a=1&#38;b=2</loc></url><url><loc>${site}/xhtml</loc></url><url><loc>${site}/bad&#x110000;</loc></url></urlset>`);
       } else if (request.url === "/") {
         response.writeHead(200, { "content-type": "text/html" });
         response.end(page('<a href="/go">Go</a>'));
@@ -220,7 +220,10 @@ describe("crawlRenderedPages", () => {
       expect(result.pages.map((page) => new URL(page.url).pathname)).toEqual(["/", "/numeric", "/xhtml"]);
       expect(result.failures[0]?.error).toContain("robots-disallowed");
       expect(result.skipped).toContain(`${site}/private`);
-      expect(result.discoveryFailures).toEqual([{ url: `${remoteSite}/map.xml`, error: "Advertised sitemap is off-origin and was not fetched" }]);
+      expect(result.discoveryFailures).toEqual([
+        { url: `${remoteSite}/map.xml`, error: "Advertised sitemap is off-origin and was not fetched" },
+        { url: `${site}/sitemap.xml`, error: expect.stringContaining("Invalid sitemap <loc>") },
+      ]);
       expect(privateFetches).toBe(0);
       expect(remoteFetches).toBe(0);
       expect(result.pages.find((page) => new URL(page.url).pathname === "/xhtml")?.anchors).toHaveLength(1);
